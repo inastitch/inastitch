@@ -29,6 +29,8 @@ namespace po = boost::program_options;
 #include <glm/gtc/type_ptr.hpp>
 
 // Glfw includes:
+// Use OpenGL ES 2.x
+//#define GLFW_INCLUDE_ES2
 // Use OpenGL ES 3.x
 #define GLFW_INCLUDE_ES3
 #include <GLFW/glfw3.h>
