@@ -14,9 +14,11 @@ Build ``inastitch``:
     make
 
 ## Run
-Make stitched video:
+Make stitched video with demo video:
 
-    inastitch --in-matrix data/inastitch_matrix.json --in-file0 data/stream0.mjpeg --in-file1 data/stream1.mjpeg --in-file2 data/stream2.mjpeg --out-file stitched.mjpeg
+    wget https://github.com/inastitch/inastitch/releases/download/v0.1/demo_video.tar.bz2
+    tar xf demo_video.tar.bz2
+    inastitch --in-matrix demo_video/inastitch_matrix.json --in-file0 demo_video/stream0.mjpeg --in-file1 demo_video/stream1.mjpeg --in-file2 demo_video/stream2.mjpeg --out-file stitched.mjpeg
 
 Play ``stitched.mjpeg`` with ``ffmpeg``:
 
