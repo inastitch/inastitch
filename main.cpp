@@ -463,36 +463,54 @@ int main(int argc, char** argv)
             }
         };
 
-        if(inStreamContext0.timeDelay < maxDelay)
-        {
-            if(isFrameDumped && !frameDumpPath.empty())
+        boost::asio::thread_pool threadPoolInDecode(inTpoolSize);
+        boost::asio::post(threadPoolInDecode,
+            [&]()
             {
-                dumpJpegAndPtsAndTxt(inStreamContext0, frameDumpPath + std::to_string(frameDumpIdx) + "in0.jpg");
+                if(inStreamContext0.timeDelay < maxDelay)
+                {
+                    if(isFrameDumped && !frameDumpPath.empty())
+                    {
+                        dumpJpegAndPtsAndTxt(inStreamContext0, frameDumpPath + std::to_string(frameDumpIdx) + "in0.jpg");
+                    }
+                    inStreamContext0.decodeJpeg();
+                } else {
+                    inStreamContext0.decodeWhite();
+                }
             }
-            inStreamContext0.decodeJpeg();
-        } else {
-            inStreamContext0.decodeWhite();
-        }
-        if(inStreamContext1.timeDelay < maxDelay)
-        {
-            if(isFrameDumped && !frameDumpPath.empty())
+        );
+        boost::asio::post(threadPoolInDecode,
+            [&]()
             {
-                dumpJpegAndPtsAndTxt(inStreamContext1, frameDumpPath + std::to_string(frameDumpIdx) + "in1.jpg");
+                if(inStreamContext1.timeDelay < maxDelay)
+                {
+                    if(isFrameDumped && !frameDumpPath.empty())
+                    {
+                        dumpJpegAndPtsAndTxt(inStreamContext1, frameDumpPath + std::to_string(frameDumpIdx) + "in1.jpg");
+                    }
+                    inStreamContext1.decodeJpeg();
+                } else {
+                    inStreamContext1.decodeWhite();
+                }
             }
-            inStreamContext1.decodeJpeg();
-        } else {
-            inStreamContext1.decodeWhite();
-        }
-        if(inStreamContext2.timeDelay < maxDelay)
-        {
-            if(isFrameDumped && !frameDumpPath.empty())
+        );
+        boost::asio::post(threadPoolInDecode,
+            [&]()
             {
-                dumpJpegAndPtsAndTxt(inStreamContext2, frameDumpPath + std::to_string(frameDumpIdx) + "in2.jpg");
+                if(inStreamContext2.timeDelay < maxDelay)
+                {
+                    if(isFrameDumped && !frameDumpPath.empty())
+                    {
+                        dumpJpegAndPtsAndTxt(inStreamContext2, frameDumpPath + std::to_string(frameDumpIdx) + "in2.jpg");
+                    }
+                    inStreamContext2.decodeJpeg();
+                } else {
+                    inStreamContext2.decodeWhite();
+                }
             }
-            inStreamContext2.decodeJpeg();
-        } else {
-            inStreamContext2.decodeWhite();
-        }
+        );
+        threadPoolInDecode.join();
+
         const auto frameT3 = std::chrono::high_resolution_clock::now();
         // input frame dump time
 
@@ -660,7 +678,8 @@ int main(int argc, char** argv)
                             ptsFile << ptsStr;
                             ptsFile.close();
                         }
-                    });
+                    }
+                );
             }
 
             frameCount++;
