@@ -7,19 +7,22 @@
 #include "inastitch/jpeg/include/MjpegParser.hpp"
 
 // Std includes:
-#include <string>
-#include <fstream>
 #include <iostream>
 
 inastitch::jpeg::MjpegParser::MjpegParser(std::string filename)
 {
-    m_mjpegFile = std::fstream(filename, std::ios::in | std::ios::binary);
+    m_mjpegFile = std::ifstream(filename, std::ios::binary);
     std::cout << "Opened MJPEG at " << filename << std::endl;
+
+    const auto ptsFilename = filename + ".pts";
+    m_ptsFile = std::ifstream(ptsFilename);
+    std::cout << "Opened PTS at" << ptsFilename << std::endl;
 }
 
 inastitch::jpeg::MjpegParser::~MjpegParser()
 {
     m_mjpegFile.close();
+    m_ptsFile.close();
 }
 
 bool inastitch::jpeg::MjpegParser::nextByte(uint8_t &byte)
@@ -31,7 +34,7 @@ bool inastitch::jpeg::MjpegParser::nextByte(uint8_t &byte)
     return false;
 }
 
-uint32_t inastitch::jpeg::MjpegParser::parseFrame(uint8_t* const jpegBuffer)
+std::tuple<uint32_t, uint64_t> inastitch::jpeg::MjpegParser::parseFrame(uint8_t* const jpegBuffer)
 {
     // MJPEG mini parser
     // - 0xFFD8: start of image
@@ -116,6 +119,11 @@ uint32_t inastitch::jpeg::MjpegParser::parseFrame(uint8_t* const jpegBuffer)
         byte1 = byte2;
     }
 
+    // read one line from PTS file
+    // PTS = presentation timestamp
+    uint64_t absTime, relTime, offTime;
+    m_ptsFile >> absTime >> relTime >> offTime;
+
     // jpegBufferOffset == jpegBufferSize
-    return jpegBufferOffset;
+    return { jpegBufferOffset, absTime };
 }

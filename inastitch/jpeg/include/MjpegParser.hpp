@@ -4,6 +4,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 // Std includes:
+#include <tuple>
 #include <string>
 #include <fstream>
 
@@ -18,13 +19,14 @@ public:
     ~MjpegParser();
 
 public:
-    uint32_t parseFrame(uint8_t* const jpegBuffer);
+    std::tuple<uint32_t, uint64_t> parseFrame(uint8_t* const jpegBuffer);
 
 private:
     bool nextByte(uint8_t &byte);
 
 private:
-    std::fstream m_mjpegFile;
+    std::ifstream m_mjpegFile;
+    std::ifstream m_ptsFile;
     uint32_t m_startMarkerCount = 0;
 };
 
