@@ -22,6 +22,9 @@
 // Boost includes:
 #include <boost/program_options.hpp>
 namespace po = boost::program_options;
+// for thread_pool
+#include <boost/asio/thread_pool.hpp>
+#include <boost/asio/post.hpp>
 
 // GLM includes:
 #include <glm/glm.hpp>
@@ -159,6 +162,7 @@ int main(int argc, char** argv)
     std::string inMatrixJsonFilename;
     std::string inFilename0, inFilename1, inFilename2;
     uint16_t inStreamWidth, inStreamHeight;
+    uint16_t inTpoolSize;
     uint16_t windowWidth, windowHeight;
     std::string outFilename;
     uint64_t maxDumpFrameCount;
@@ -194,6 +198,8 @@ int main(int argc, char** argv)
              "Input stream WIDTH")
             ("in-height", po::value<uint16_t>(&inStreamHeight)->default_value(480),
              "Input stream HEIGHT")
+            ("in-tpool-size", po::value<uint16_t>(&inTpoolSize)->default_value(3),
+             "Thread pool SIZE for input stream decoding")
 
             ("out-width", po::value<uint16_t>(&windowWidth)->default_value(1920),
              "OpenGL rendering and output stream WIDTH")
@@ -202,21 +208,21 @@ int main(int argc, char** argv)
             ("out-file", po::value<std::string>(&outFilename),
              "Write output MJPEG to FILENAME")
 
-             ("max-dump-frame", po::value<uint64_t>(&maxDumpFrameCount)->default_value(std::numeric_limits<uint64_t>::max()),
-              "Maximum frame count")
-             ("frame-dump-path", po::value<std::string>(&frameDumpPath)->default_value(""),
-              "Dump frame to PATH")
-             ("frame-dump-offset-id", po::value<uint64_t>(&frameDumpOffsetId)->default_value(0),
-              "Dump frame starting at ID")
-             ("frame-dump-offset-time", po::value<std::string>(&frameDumpOffsetTimeStr)->default_value("0"),
-              "Dump frame starting at TIME (sysclk unix timestamp in us)")
-             ("max-delay", po::value<uint64_t>(&maxDelay)->default_value(std::numeric_limits<uint64_t>::max()), // delay in us
-              "Max delay")
-             ("frame-dump-id-from-0", "Dump frame ID relative to offset (i.e., always starts at 0), rather start of stream")
-             ("print-overlay", "Print text overlay on output frame")
+            ("max-dump-frame", po::value<uint64_t>(&maxDumpFrameCount)->default_value(std::numeric_limits<uint64_t>::max()),
+             "Maximum frame count")
+            ("frame-dump-path", po::value<std::string>(&frameDumpPath)->default_value(""),
+             "Dump frame to PATH")
+            ("frame-dump-offset-id", po::value<uint64_t>(&frameDumpOffsetId)->default_value(0),
+             "Dump frame starting at ID")
+            ("frame-dump-offset-time", po::value<std::string>(&frameDumpOffsetTimeStr)->default_value("0"),
+             "Dump frame starting at TIME (sysclk unix timestamp in us)")
+            ("max-delay", po::value<uint64_t>(&maxDelay)->default_value(std::numeric_limits<uint64_t>::max()), // delay in us
+             "Max delay")
+            ("frame-dump-id-from-0", "Dump frame ID relative to offset (i.e., always starts at 0), rather start of stream")
+            ("print-overlay", "Print text overlay on output frame")
 
-             ("stats,s", "Print stats")
-             ("help,h", "Show help")
+            ("stats,s", "Print stats")
+            ("help,h", "Show help")
         ;
 
         po::variables_map vm;
@@ -242,6 +248,9 @@ int main(int argc, char** argv)
 
         frameDumpOffsetTime = std::strtoull(frameDumpOffsetTimeStr.c_str(), nullptr, 0);
     }
+
+    std::cout << "Input stream threads: " << inTpoolSize << std::endl;
+    boost::asio::thread_pool threadPoolOutStream(1);
 
     GLuint glShaderProgram, glVextexBufferObject;
     GLint glShaderPositionAttrib, glShaderTexCoordAttrib;
@@ -388,18 +397,36 @@ int main(int argc, char** argv)
             inStreamContext2.timeDelay = inStreamContext2.absTime - frameAbsTime;
 
             bool eofContext0 = false, eofContext1 = false, eofContext2 = false;
+
+            boost::asio::thread_pool threadPoolInStream(inTpoolSize);
             if(inStreamContext0.timeDelay < maxDelay)
             {
-                eofContext0 = !inStreamContext0.parseFrame();
+                boost::asio::post(threadPoolInStream,
+                    [&eofContext0, &inStreamContext0]()
+                    {
+                        eofContext0 = !inStreamContext0.parseFrame();
+                    }
+                );
             }
             if(inStreamContext1.timeDelay < maxDelay)
             {
-                eofContext1 = !inStreamContext1.parseFrame();
+                boost::asio::post(threadPoolInStream,
+                    [&eofContext1, &inStreamContext1]()
+                    {
+                        eofContext1 = !inStreamContext1.parseFrame();
+                    }
+                );
             }
             if(inStreamContext2.timeDelay < maxDelay)
             {
-                eofContext2 = !inStreamContext2.parseFrame();
+                boost::asio::post(threadPoolInStream,
+                    [&eofContext2, &inStreamContext2]()
+                    {
+                        eofContext2 = !inStreamContext2.parseFrame();
+                    }
+                );
             }
+            threadPoolInStream.join();
 
             if(eofContext0 && eofContext1 && eofContext2)
             {
@@ -605,31 +632,35 @@ int main(int argc, char** argv)
 
             if(isFrameDumped )
             {
-                auto [ jpegData, jpegSize ] = rtpJpegEncoder.encode(framebuffer, windowWidth, windowHeight);
+                boost::asio::post(threadPoolOutStream,
+                   [&]
+                   {
+                        auto [ jpegData, jpegSize ] = rtpJpegEncoder.encode(framebuffer, windowWidth, windowHeight);
 
-                const std::string ptsStr = std::to_string(frameAbsTime) + " "
-                                           + std::to_string(frameRelTime) + " "
-                                           + std::to_string(frameDiffTime);
+                        const std::string ptsStr = std::to_string(frameAbsTime) + " "
+                                                   + std::to_string(frameRelTime) + " "
+                                                   + std::to_string(frameDiffTime);
 
-                if(!outFilename.empty())
-                {
-                    // append to output MJPEG
-                    outJpegFile.write((char*)&jpegData[0], jpegSize);
+                        if(!outFilename.empty())
+                        {
+                            // append to output MJPEG
+                            outJpegFile.write((char*)&jpegData[0], jpegSize);
 
-                    // append to output PTS
-                    outPtsFile << ptsStr << std::endl;
-                }
+                            // append to output PTS
+                            outPtsFile << ptsStr << std::endl;
+                        }
 
-                if(!frameDumpPath.empty())
-                {
-                    auto jpegFile = std::fstream(frameDumpPath + std::to_string(frameDumpIdx) + "out.jpg", std::ios::out | std::ios::binary);
-                    jpegFile.write((char*)&jpegData[0], jpegSize);
-                    jpegFile.close();
+                        if(!frameDumpPath.empty())
+                        {
+                            auto jpegFile = std::fstream(frameDumpPath + std::to_string(frameDumpIdx) + "out.jpg", std::ios::out | std::ios::binary);
+                            jpegFile.write((char*)&jpegData[0], jpegSize);
+                            jpegFile.close();
 
-                    auto ptsFile = std::fstream(frameDumpPath + std::to_string(frameDumpIdx) + "out.jpg" + ".pts", std::ios::out);
-                    ptsFile << ptsStr;
-                    ptsFile.close();
-                }
+                            auto ptsFile = std::fstream(frameDumpPath + std::to_string(frameDumpIdx) + "out.jpg" + ".pts", std::ios::out);
+                            ptsFile << ptsStr;
+                            ptsFile.close();
+                        }
+                    });
             }
 
             frameCount++;
@@ -670,6 +701,8 @@ int main(int argc, char** argv)
 
     outJpegFile.close();
     outPtsFile.close();
+
+    threadPoolOutStream.join();
 
     GL_CHECK( glDeleteBuffers(1, &glVextexBufferObject) );
     glfwTerminate();

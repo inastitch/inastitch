@@ -32,8 +32,8 @@ find_library(TURBO_JPEG_STATIC_LIB libturbojpeg.a)
 # Reminder: static dependencies need to be linked *after*.
 #           For example, JPEG is after OpenCV.
 target_link_libraries(inastitch_cal
-    #-lboost_program_options
-    ${BOOST_PROG_OPTS_STATIC_LIB}
+    -lboost_program_options
+    #${BOOST_PROG_OPTS_STATIC_LIB}
 
     # OpenCV static libraries
     # Note: multiples times because of dependencies

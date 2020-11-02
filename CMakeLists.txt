@@ -58,10 +58,10 @@ add_executable(inastitch
 find_library(BOOST_PROG_OPTS_STATIC_LIB libboost_program_options.a)
 find_library(TURBO_JPEG_STATIC_LIB libturbojpeg.a)
 target_link_libraries(inastitch
-    #-lboost_program_options
-    ${BOOST_PROG_OPTS_STATIC_LIB}
-    #-lturbojpeg
-    ${TURBO_JPEG_STATIC_LIB}
+    -lboost_program_options
+    #${BOOST_PROG_OPTS_STATIC_LIB}
+    -lturbojpeg
+    #${TURBO_JPEG_STATIC_LIB}
 
     -lGLESv2 -lglfw
     -pthread
