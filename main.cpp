@@ -104,16 +104,18 @@ template<class FrameParser>
 struct InputStreamContext
 {
     InputStreamContext(uint32_t maxRgbaBufferSize, std::string streamLocationString)
+        : rgbaBufferSize(maxRgbaBufferSize)
     {
-        rgbaBufferSize = maxRgbaBufferSize;
-        jpegParserPtr = new FrameParser(streamLocationString);
+        jpegParserPtr = new FrameParser(streamLocationString, maxRgbaBufferSize);
+        // Note: assumes RGBA data is always larger than JPEG data
         jpegDecoderPtr = new inastitch::jpeg::Decoder(maxRgbaBufferSize);
     }
 
-    bool parseFrame()
+    bool getFrame(uint32_t index)
     {
         // JPEG frame
-        const auto [_jpegBufferSize, _absTime] = jpegParserPtr->parseFrame(jpegDecoderPtr->jpegBuffer());
+        const auto [_jpegBuffer, _jpegBufferSize, _absTime] = jpegParserPtr->getFrame(index);
+        jpegBuffer = _jpegBuffer;
         jpegBufferSize = _jpegBufferSize;
         absTime = _absTime;
         // TODO: update relTime and offTime
@@ -123,7 +125,7 @@ struct InputStreamContext
 
     void decodeJpeg()
     {
-        rgbaBuffer = jpegDecoderPtr->decode();
+        rgbaBuffer = jpegDecoderPtr->decode(jpegBuffer, jpegBufferSize);
     }
 
     void decodeWhite()
@@ -143,8 +145,9 @@ struct InputStreamContext
     inastitch::jpeg::Decoder *jpegDecoderPtr = nullptr;
     FrameParser *jpegParserPtr = nullptr;
 
+    unsigned char *jpegBuffer = nullptr;
     unsigned char *rgbaBuffer = nullptr;
-    uint32_t rgbaBufferSize;
+    const uint32_t rgbaBufferSize;
     uint32_t jpegBufferSize;
 
     // absolute time since epoch (in us)
@@ -365,9 +368,9 @@ int main(int argc, char** argv)
     InputStreamContext<inastitch::jpeg::MjpegParser> inStreamContext2(inStreamMaxRgbBufferSize, inFilename2);
     // parse first frames before entering the loop
     {
-        inStreamContext0.parseFrame();
-        inStreamContext1.parseFrame();
-        inStreamContext2.parseFrame();
+        inStreamContext0.getFrame(0);
+        inStreamContext1.getFrame(0);
+        inStreamContext2.getFrame(0);
     }
 
     // prepare output file
@@ -398,35 +401,18 @@ int main(int argc, char** argv)
 
             bool eofContext0 = false, eofContext1 = false, eofContext2 = false;
 
-            boost::asio::thread_pool threadPoolInStream(inTpoolSize);
             if(inStreamContext0.timeDelay < maxDelay)
             {
-                boost::asio::post(threadPoolInStream,
-                    [&eofContext0, &inStreamContext0]()
-                    {
-                        eofContext0 = !inStreamContext0.parseFrame();
-                    }
-                );
+                eofContext0 = !inStreamContext0.getFrame(0);
             }
             if(inStreamContext1.timeDelay < maxDelay)
             {
-                boost::asio::post(threadPoolInStream,
-                    [&eofContext1, &inStreamContext1]()
-                    {
-                        eofContext1 = !inStreamContext1.parseFrame();
-                    }
-                );
+                eofContext1 = !inStreamContext1.getFrame(0);
             }
             if(inStreamContext2.timeDelay < maxDelay)
             {
-                boost::asio::post(threadPoolInStream,
-                    [&eofContext2, &inStreamContext2]()
-                    {
-                        eofContext2 = !inStreamContext2.parseFrame();
-                    }
-                );
+                eofContext2 = !inStreamContext2.getFrame(0);
             }
-            threadPoolInStream.join();
 
             if(eofContext0 && eofContext1 && eofContext2)
             {
@@ -449,16 +435,16 @@ int main(int argc, char** argv)
                                    (frameAbsTime >= frameDumpOffsetTime);
         const auto frameDumpIdx = isDumpFrameIdRelativeToOffset ? frameDumpCount: frameCount;
 
-        auto dumpJpegAndPtsAndTxt = [](const decltype(inStreamContext0) &fileCtx, const std::string &filename)
+        auto dumpJpegAndPtsAndTxt = [](const decltype(inStreamContext0) &inStreamCtx, const std::string &filename)
         {
             {
                 auto jpegFile = std::fstream(filename, std::ios::out | std::ios::binary);
-                jpegFile.write((char*)fileCtx.jpegDecoderPtr->jpegBuffer(), fileCtx.jpegBufferSize);
+                jpegFile.write((char*)inStreamCtx.jpegBuffer, inStreamCtx.jpegBufferSize);
                 jpegFile.close();
             }
             {
                 auto ptsFile = std::fstream(filename + ".pts", std::ios::out);
-                ptsFile << fileCtx.absTime << " " << fileCtx.relTime << " " << fileCtx.offTime << std::endl;
+                ptsFile << inStreamCtx.absTime << " " << inStreamCtx.relTime << " " << inStreamCtx.offTime << std::endl;
                 ptsFile.close();
             }
         };

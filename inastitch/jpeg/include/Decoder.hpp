@@ -18,20 +18,10 @@ public:
     ~Decoder();
 
 public:
-    uint8_t* decode();
+    uint8_t* decode(uint8_t* jpegBuffer, uint32_t jpegBufferSize);
     void writePpm(const std::string &filename);
 
 public:
-    uint8_t* jpegBuffer() const
-    {
-        return m_jpegBuffer;
-    }
-
-    uint32_t jpegBufferSize() const
-    {
-        return m_jpegBufferSize;
-    }
-
     uint8_t* rgbaBuffer() const
     {
         return m_rgbaBuffer;
@@ -49,11 +39,9 @@ private:
 
 private:
     const uint32_t m_rgbaBufferSize;
-    const uint32_t m_jpegBufferSize;
 
 private:
     uint8_t* const m_rgbaBuffer;
-    uint8_t* const m_jpegBuffer;
     
 private:
     // tjhandler

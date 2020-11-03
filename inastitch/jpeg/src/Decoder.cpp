@@ -17,27 +17,22 @@
 
 inastitch::jpeg::Decoder::Decoder(uint32_t maxRgbBufferSize)
         : m_rgbaBufferSize(maxRgbBufferSize)
-        // JPEG data should be at least smaller than RAW data
-        , m_jpegBufferSize(maxRgbBufferSize)
         , m_rgbaBuffer( new uint8_t[m_rgbaBufferSize] )
-        , m_jpegBuffer( new uint8_t[m_jpegBufferSize] )
         , m_jpegDecompressor( tjInitDecompress() )
 { }
 
 inastitch::jpeg::Decoder::~Decoder()
 {
     tjDestroy(m_jpegDecompressor);
-
-    delete[] m_jpegBuffer;
     delete[] m_rgbaBuffer;
 }
 
-uint8_t* inastitch::jpeg::Decoder::decode()
+uint8_t* inastitch::jpeg::Decoder::decode(uint8_t *jpegBuffer, uint32_t jpegBufferSize)
 {
     int32_t jpegWidth = 0, jpegHeight = 0, jpegSubsamp = 0;
     int tjError = 0;
 
-    tjError = tjDecompressHeader2(m_jpegDecompressor, m_jpegBuffer, m_jpegBufferSize, &jpegWidth, &jpegHeight, &jpegSubsamp);
+    tjError = tjDecompressHeader2(m_jpegDecompressor, jpegBuffer, jpegBufferSize, &jpegWidth, &jpegHeight, &jpegSubsamp);
     if(tjError != 0) {
         std::cerr << tjGetErrorStr() << std::endl;
     }
@@ -55,7 +50,7 @@ uint8_t* inastitch::jpeg::Decoder::decode()
     // TODO: decompress into RGBA to save processing when writing to OpenGL texture
     tjError = tjDecompress2(
         m_jpegDecompressor,
-        m_jpegBuffer, m_jpegBufferSize,
+        jpegBuffer, jpegBufferSize,
         m_rgbaBuffer, 0 /*width*/, 0 /*pitch*/, 0 /*height*/,
         TJPF_RGBA, TJFLAG_FASTDCT | TJFLAG_NOREALLOC
     );
