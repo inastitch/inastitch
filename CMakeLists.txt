@@ -12,6 +12,9 @@ project(inastitch
     LANGUAGES CXX
 )
 
+# Required for libav C code
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive")
+
 # https://cmake.org/cmake/help/v3.6/module/CPackDeb.html
 set(CPACK_GENERATOR "DEB")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "vjp")
@@ -43,6 +46,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include_directories("${CMAKE_SOURCE_DIR}")
 include_directories("${CMAKE_SOURCE_DIR}/include/")
+include_directories("${CMAKE_SOURCE_DIR}/include/libav/")
 
 add_executable(inastitch
     inastitch/opengl/src/OpenGlHelper.cpp
@@ -50,6 +54,7 @@ add_executable(inastitch
     inastitch/jpeg/src/Decoder.cpp
     inastitch/jpeg/src/Encoder.cpp
     inastitch/jpeg/src/MjpegParser.cpp
+    inastitch/jpeg/src/RtpJpegParser.cpp
     inastitch/json/src/Matrix.cpp
     main.cpp
     ${CMAKE_BINARY_DIR}/version.cpp

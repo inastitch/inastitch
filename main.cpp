@@ -16,6 +16,7 @@
 #include "inastitch/jpeg/include/Decoder.hpp"
 #include "inastitch/jpeg/include/Encoder.hpp"
 #include "inastitch/jpeg/include/MjpegParser.hpp"
+#include "inastitch/jpeg/include/RtpJpegParser.hpp"
 #include "inastitch/opengl/include/OpenGlHelper.hpp"
 #include "inastitch/json/include/Matrix.hpp"
 
@@ -100,28 +101,20 @@ static const GLfloat vertices[] = {
 // Note: UV texture coordinates are "inverted" to flip texture image,
 //       since OpenGL reads image "upside-down".
 
-template<class FrameParser>
-struct InputStreamContext
+struct GenericInputStreamContext
 {
-    InputStreamContext(uint32_t maxRgbaBufferSize, std::string streamLocationString)
+    GenericInputStreamContext(uint32_t maxRgbaBufferSize)
         : rgbaBufferSize(maxRgbaBufferSize)
     {
-        jpegParserPtr = new FrameParser(streamLocationString, maxRgbaBufferSize);
-        // Note: assumes RGBA data is always larger than JPEG data
         jpegDecoderPtr = new inastitch::jpeg::Decoder(maxRgbaBufferSize);
     }
 
-    bool getFrame(uint32_t index)
+    ~GenericInputStreamContext()
     {
-        // JPEG frame
-        const auto [_jpegBuffer, _jpegBufferSize, _absTime] = jpegParserPtr->getFrame(index);
-        jpegBuffer = _jpegBuffer;
-        jpegBufferSize = _jpegBufferSize;
-        absTime = _absTime;
-        // TODO: update relTime and offTime
-
-        return (jpegBufferSize != 0);
+        delete jpegDecoderPtr;
     }
+
+    virtual bool getFrame(uint32_t index) = 0;
 
     void decodeJpeg()
     {
@@ -136,14 +129,7 @@ struct InputStreamContext
         }
     }
 
-    ~InputStreamContext()
-    {
-        delete jpegParserPtr;
-        delete jpegDecoderPtr;
-    }
-
     inastitch::jpeg::Decoder *jpegDecoderPtr = nullptr;
-    FrameParser *jpegParserPtr = nullptr;
 
     unsigned char *jpegBuffer = nullptr;
     unsigned char *rgbaBuffer = nullptr;
@@ -160,10 +146,41 @@ struct InputStreamContext
     uint64_t timeDelay = 0;
 };
 
+template<class FrameParser>
+struct InputStreamContext : GenericInputStreamContext
+{
+    InputStreamContext(uint32_t maxRgbaBufferSize, std::string streamLocationString)
+        : GenericInputStreamContext(maxRgbaBufferSize)
+    {
+        jpegParserPtr = new FrameParser(streamLocationString, maxRgbaBufferSize);
+        // Note: assumes RGBA data is always larger than JPEG data
+    }
+
+    bool getFrame(uint32_t index)
+    {
+        // JPEG frame
+        const auto [_jpegBuffer, _jpegBufferSize, _absTime] = jpegParserPtr->getFrame(index);
+        jpegBuffer = _jpegBuffer;
+        jpegBufferSize = _jpegBufferSize;
+        absTime = _absTime;
+        // TODO: update relTime and offTime
+
+        return (jpegBufferSize != 0);
+    }
+
+    ~InputStreamContext()
+    {
+        delete jpegParserPtr;
+    }
+
+    FrameParser *jpegParserPtr = nullptr;
+};
+
 int main(int argc, char** argv)
 {
     std::string inMatrixJsonFilename;
     std::string inFilename0, inFilename1, inFilename2;
+    std::string inSocketPort0, inSocketPort1, inSocketPort2;
     uint16_t inStreamWidth, inStreamHeight;
     uint16_t inTpoolSize;
     uint16_t windowWidth, windowHeight;
@@ -177,6 +194,8 @@ int main(int argc, char** argv)
     bool isDumpFrameIdRelativeToOffset = false;
     bool isOverlayEnabled = false;
     bool isStatsEnabled = false;
+
+    bool isFileInput = false;
 
     std::cout << "Inatech stitcher "
               << inastitch::version::GIT_COMMIT_TAG
@@ -196,6 +215,13 @@ int main(int argc, char** argv)
              "Read MJPEG from FILENAME for left texture (1)")
             ("in-file2", po::value<std::string>(&inFilename2),
              "Read MJPEG from FILENAME for right texture (2)")
+
+            ("in-port0", po::value<std::string>(&inSocketPort0),
+             "Listen for RTP/JPEG on PORT for central texture (0)")
+            ("in-port1", po::value<std::string>(&inSocketPort1),
+             "Listen for RTP/JPEG on PORT for left texture (1)")
+            ("in-port2", po::value<std::string>(&inSocketPort2),
+             "Listen for RTP/JPEG on PORT for right texture (2)")
 
             ("in-width", po::value<uint16_t>(&inStreamWidth)->default_value(640),
              "Input stream WIDTH")
@@ -250,6 +276,19 @@ int main(int argc, char** argv)
         }
 
         frameDumpOffsetTime = std::strtoull(frameDumpOffsetTimeStr.c_str(), nullptr, 0);
+
+        if( (vm.count("in-file0") || vm.count("in-file1") || vm.count("in-file2")) )
+        {
+            isFileInput = true;
+        }
+
+        // Should not mix ile and network input
+        if( isFileInput &&
+            (vm.count("in-port0") || vm.count("in-port1") || vm.count("in-port2"))   )
+        {
+            std::cout << "Cannot mix file and network stream inputs" << std::endl;
+            return 0;
+        }
     }
 
     std::cout << "Input stream threads: " << inTpoolSize << std::endl;
@@ -363,14 +402,28 @@ int main(int argc, char** argv)
     }
 
     const auto inStreamMaxRgbBufferSize = inStreamWidth * inStreamHeight * 4; // RGBA format
-    InputStreamContext<inastitch::jpeg::MjpegParser> inStreamContext0(inStreamMaxRgbBufferSize, inFilename0);
-    InputStreamContext<inastitch::jpeg::MjpegParser> inStreamContext1(inStreamMaxRgbBufferSize, inFilename1);
-    InputStreamContext<inastitch::jpeg::MjpegParser> inStreamContext2(inStreamMaxRgbBufferSize, inFilename2);
+
+    std::unique_ptr<GenericInputStreamContext> inStreamContext0;
+    std::unique_ptr<GenericInputStreamContext> inStreamContext1;
+    std::unique_ptr<GenericInputStreamContext> inStreamContext2;
+    if(isFileInput)
+    {
+        inStreamContext0 = std::make_unique<InputStreamContext<inastitch::jpeg::MjpegParser>>(inStreamMaxRgbBufferSize, inFilename0);
+        inStreamContext1 = std::make_unique<InputStreamContext<inastitch::jpeg::MjpegParser>>(inStreamMaxRgbBufferSize, inFilename1);
+        inStreamContext2 = std::make_unique<InputStreamContext<inastitch::jpeg::MjpegParser>>(inStreamMaxRgbBufferSize, inFilename2);
+    }
+    else
+    {
+        inStreamContext0 = std::make_unique<InputStreamContext<inastitch::jpeg::RtpJpegParser>>(inStreamMaxRgbBufferSize, inSocketPort0);
+        inStreamContext1 = std::make_unique<InputStreamContext<inastitch::jpeg::RtpJpegParser>>(inStreamMaxRgbBufferSize, inSocketPort1);
+        inStreamContext2 = std::make_unique<InputStreamContext<inastitch::jpeg::RtpJpegParser>>(inStreamMaxRgbBufferSize, inSocketPort2);
+    }
+
     // parse first frames before entering the loop
     {
-        inStreamContext0.getFrame(0);
-        inStreamContext1.getFrame(0);
-        inStreamContext2.getFrame(0);
+        inStreamContext0->getFrame(0);
+        inStreamContext1->getFrame(0);
+        inStreamContext2->getFrame(0);
     }
 
     // prepare output file
@@ -394,31 +447,31 @@ int main(int argc, char** argv)
         uint64_t frameAbsTime = 0;
         {
             // min of 3 input frame timestamps
-            frameAbsTime = std::min(inStreamContext0.absTime, std::min(inStreamContext1.absTime, inStreamContext2.absTime));
-            inStreamContext0.timeDelay = inStreamContext0.absTime - frameAbsTime;
-            inStreamContext1.timeDelay = inStreamContext1.absTime - frameAbsTime;
-            inStreamContext2.timeDelay = inStreamContext2.absTime - frameAbsTime;
+            frameAbsTime = std::min(inStreamContext0->absTime, std::min(inStreamContext1->absTime, inStreamContext2->absTime));
+            inStreamContext0->timeDelay = inStreamContext0->absTime - frameAbsTime;
+            inStreamContext1->timeDelay = inStreamContext1->absTime - frameAbsTime;
+            inStreamContext2->timeDelay = inStreamContext2->absTime - frameAbsTime;
 
             bool eofContext0 = false, eofContext1 = false, eofContext2 = false;
 
-            if(inStreamContext0.timeDelay < maxDelay)
+            if(inStreamContext0->timeDelay < maxDelay)
             {
-                eofContext0 = !inStreamContext0.getFrame(0);
+                eofContext0 = !inStreamContext0->getFrame(0);
             }
-            if(inStreamContext1.timeDelay < maxDelay)
+            if(inStreamContext1->timeDelay < maxDelay)
             {
-                eofContext1 = !inStreamContext1.getFrame(0);
+                eofContext1 = !inStreamContext1->getFrame(0);
             }
-            if(inStreamContext2.timeDelay < maxDelay)
+            if(inStreamContext2->timeDelay < maxDelay)
             {
-                eofContext2 = !inStreamContext2.getFrame(0);
+                eofContext2 = !inStreamContext2->getFrame(0);
             }
 
             if(eofContext0 && eofContext1 && eofContext2)
             {
                 // No more frames to process,
                 // break rendering loop
-                break;
+                //break;
             }
         }
         if(isFirstFrame)
@@ -439,12 +492,12 @@ int main(int argc, char** argv)
         {
             {
                 auto jpegFile = std::fstream(filename, std::ios::out | std::ios::binary);
-                jpegFile.write((char*)inStreamCtx.jpegBuffer, inStreamCtx.jpegBufferSize);
+                jpegFile.write((char*)inStreamCtx->jpegBuffer, inStreamCtx->jpegBufferSize);
                 jpegFile.close();
             }
             {
                 auto ptsFile = std::fstream(filename + ".pts", std::ios::out);
-                ptsFile << inStreamCtx.absTime << " " << inStreamCtx.relTime << " " << inStreamCtx.offTime << std::endl;
+                ptsFile << inStreamCtx->absTime << " " << inStreamCtx->relTime << " " << inStreamCtx->offTime << std::endl;
                 ptsFile.close();
             }
         };
@@ -453,45 +506,45 @@ int main(int argc, char** argv)
         boost::asio::post(threadPoolInDecode,
             [&]()
             {
-                if(inStreamContext0.timeDelay < maxDelay)
+                if( (inStreamContext0->jpegBufferSize > 0) && (inStreamContext0->timeDelay < maxDelay) )
                 {
                     if(isFrameDumped && !frameDumpPath.empty())
                     {
                         dumpJpegAndPtsAndTxt(inStreamContext0, frameDumpPath + std::to_string(frameDumpIdx) + "in0.jpg");
                     }
-                    inStreamContext0.decodeJpeg();
+                    inStreamContext0->decodeJpeg();
                 } else {
-                    inStreamContext0.decodeWhite();
+                    inStreamContext0->decodeWhite();
                 }
             }
         );
         boost::asio::post(threadPoolInDecode,
             [&]()
             {
-                if(inStreamContext1.timeDelay < maxDelay)
+                if( (inStreamContext1->jpegBufferSize > 0) && (inStreamContext1->timeDelay < maxDelay) )
                 {
                     if(isFrameDumped && !frameDumpPath.empty())
                     {
                         dumpJpegAndPtsAndTxt(inStreamContext1, frameDumpPath + std::to_string(frameDumpIdx) + "in1.jpg");
                     }
-                    inStreamContext1.decodeJpeg();
+                    inStreamContext1->decodeJpeg();
                 } else {
-                    inStreamContext1.decodeWhite();
+                    inStreamContext1->decodeWhite();
                 }
             }
         );
         boost::asio::post(threadPoolInDecode,
             [&]()
             {
-                if(inStreamContext2.timeDelay < maxDelay)
+                if( (inStreamContext2->jpegBufferSize > 0) && (inStreamContext2->timeDelay < maxDelay) )
                 {
                     if(isFrameDumped && !frameDumpPath.empty())
                     {
                         dumpJpegAndPtsAndTxt(inStreamContext2, frameDumpPath + std::to_string(frameDumpIdx) + "in2.jpg");
                     }
-                    inStreamContext2.decodeJpeg();
+                    inStreamContext2->decodeJpeg();
                 } else {
-                    inStreamContext2.decodeWhite();
+                    inStreamContext2->decodeWhite();
                 }
             }
         );
@@ -500,9 +553,9 @@ int main(int argc, char** argv)
         const auto frameT3 = std::chrono::high_resolution_clock::now();
         // input frame dump time
 
-        uint8_t *bmpBuffer0 = inStreamContext0.rgbaBuffer;
-        uint8_t *bmpBuffer1 = inStreamContext1.rgbaBuffer;
-        uint8_t *bmpBuffer2 = inStreamContext2.rgbaBuffer;
+        uint8_t *bmpBuffer0 = inStreamContext0->rgbaBuffer;
+        uint8_t *bmpBuffer1 = inStreamContext1->rgbaBuffer;
+        uint8_t *bmpBuffer2 = inStreamContext2->rgbaBuffer;
 
         glfwPollEvents();
         GL_CHECK( glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT) );
@@ -569,15 +622,15 @@ int main(int argc, char** argv)
             }
 
             overlayHelper.putString(10,    224, "CAM1=", 5);
-            overlayHelper.putNumber(10+25, 224, inStreamContext1.timeDelay, 6);
+            overlayHelper.putNumber(10+25, 224, inStreamContext1->timeDelay, 6);
             overlayHelper.putString(10+68, 224, "us", 2);
 
             overlayHelper.putString(330,    224, "CAM0=", 5);
-            overlayHelper.putNumber(330+25, 224, inStreamContext0.timeDelay, 6);
+            overlayHelper.putNumber(330+25, 224, inStreamContext0->timeDelay, 6);
             overlayHelper.putString(330+68, 224, "us", 2);
 
             overlayHelper.putString(650,    224, "CAM2=", 5);
-            overlayHelper.putNumber(650+25, 224, inStreamContext2.timeDelay, 6);
+            overlayHelper.putNumber(650+25, 224, inStreamContext2->timeDelay, 6);
             overlayHelper.putString(650+68, 224, "us", 2);
 
             auto overlayModelMat = identMat4;
@@ -634,6 +687,7 @@ int main(int argc, char** argv)
             frameT8 = std::chrono::high_resolution_clock::now();
             // read back pixel time
 
+#if 0
             if(isFrameDumped )
             {
                 boost::asio::post(threadPoolOutStream,
@@ -667,6 +721,7 @@ int main(int argc, char** argv)
                     }
                 );
             }
+#endif
 
             frameCount++;
             if(isFrameDumped) frameDumpCount++;
@@ -680,9 +735,9 @@ int main(int argc, char** argv)
         
         const auto frameT10 = std::chrono::high_resolution_clock::now();
         std::cout << "[" << frameCount << "," << frameDumpCount
-                  << "] t0:" << inStreamContext0.timeDelay
-                  << ", t1:" << inStreamContext1.timeDelay
-                  << ", t2:" << inStreamContext2.timeDelay << std::endl;
+                  << "] t0:" << inStreamContext0->timeDelay
+                  << ", t1:" << inStreamContext1->timeDelay
+                  << ", t2:" << inStreamContext2->timeDelay << std::endl;
 
         if(isStatsEnabled)
         std::cout << "inParse:" << std::chrono::duration_cast<std::chrono::microseconds>(frameT2-frameT1).count() << "us"
@@ -699,10 +754,18 @@ int main(int argc, char** argv)
 
     const auto renderTimeEnd = std::chrono::high_resolution_clock::now();
     const auto renderTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(renderTimeEnd-renderTimeStart).count();
-    std::cout << frameCount << " frames rendered in "
-              << renderTimeMs << "ms"
-              << " (" << frameCount/(renderTimeMs/1000) << " fps)"
-              << std::endl;
+
+    if(frameCount == 0)
+    {
+        std::cout << "No frame rendered" << std::endl;
+    }
+    else
+    {
+        std::cout << frameCount << " frames rendered in "
+                  << renderTimeMs << "ms"
+                  << " (" << frameCount/(renderTimeMs/1000) << " fps)"
+                  << std::endl;
+    }
 
     outJpegFile.close();
     outPtsFile.close();

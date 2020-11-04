@@ -41,6 +41,7 @@ inastitch::jpeg::MjpegParser::MjpegParser(std::string filename, uint32_t maxJpeg
 
 inastitch::jpeg::MjpegParser::~MjpegParser()
 {
+    delete[] m_jpegSizeArray;
     delete[] m_timestampArray;
     for(int i = 0; i < jpegBufferCount; i++) {
         delete[] m_jpegBufferArray[i];

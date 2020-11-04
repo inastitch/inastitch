@@ -34,7 +34,9 @@ uint8_t* inastitch::jpeg::Decoder::decode(uint8_t *jpegBuffer, uint32_t jpegBuff
 
     tjError = tjDecompressHeader2(m_jpegDecompressor, jpegBuffer, jpegBufferSize, &jpegWidth, &jpegHeight, &jpegSubsamp);
     if(tjError != 0) {
-        std::cerr << tjGetErrorStr() << std::endl;
+        // Avoid endless warning about "Warning: unknown JFIF revision number 2.01"
+        // TODO: fix JPEG header revision number
+        //std::cerr << tjGetErrorStr() << std::endl;
     }
 
     // check whether the RGB buffer is big enough
@@ -43,6 +45,7 @@ uint8_t* inastitch::jpeg::Decoder::decode(uint8_t *jpegBuffer, uint32_t jpegBuff
         std::cerr << "Error: JPEG image size " << jpegWidth << "x" << jpegHeight << " does not fit allocated buffer size." << std::endl;
         std::abort();
     }
+    //std::cout << "JPEG: " << jpegWidth << "x" << jpegHeight << std::endl;
 
     m_width = jpegWidth;
     m_height = jpegHeight;
@@ -55,7 +58,8 @@ uint8_t* inastitch::jpeg::Decoder::decode(uint8_t *jpegBuffer, uint32_t jpegBuff
         TJPF_RGBA, TJFLAG_FASTDCT | TJFLAG_NOREALLOC
     );
     if(tjError != 0) {
-        std::cerr << tjGetErrorStr() << std::endl;
+        // Avoid endless warning about "Warning: unknown JFIF revision number 2.01"
+        //std::cerr << tjGetErrorStr() << std::endl;
     }
 
     return m_rgbaBuffer;
