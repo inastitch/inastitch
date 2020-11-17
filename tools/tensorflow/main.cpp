@@ -2,12 +2,14 @@
 // by Vincent Jordan
 
 // TensorFlow Lite includes:
+#include "edgetpu.h"
 #include "tensorflow/lite/model.h"
 #include "tensorflow/lite/interpreter.h"
 #include "tensorflow/lite/kernels/register.h"
 
 // See docs:
 // https://www.tensorflow.org/lite/guide/inference#load_and_run_a_model_in_c
+// https://www.tensorflow.org/lite/models/object_detection/overview
 
 // OpenCv includes:
 #include <opencv2/imgproc.hpp>
@@ -33,15 +35,33 @@ int main(int /*argc*/, char** /*argv*/)
      double camHeight = cap.get(cv::CAP_PROP_FRAME_HEIGHT);
      std::cout << "Opened camera at " << camWidth << "x" << camHeight << std::endl;
 
+     std::cout << "Running with EdgeTPU " << edgetpu::EdgeTpuManager::GetSingleton()->Version() << std::endl;
+     // Sets up the tpu_context.
+     edgetpu::EdgeTpuManager::GetSingleton()->SetVerbosity(1);
+     auto tpuContext = edgetpu::EdgeTpuManager::GetSingleton()->OpenDevice();
+     if(!tpuContext->IsReady()) {
+         std::cout << "EdgeTPU is not ready" << std::endl;
+         return -1;
+     }
+
      // Load model
-     std::unique_ptr<tflite::FlatBufferModel> model = tflite::FlatBufferModel::BuildFromFile("mobilenet_v1_300x300.tflite");
+     auto model = tflite::FlatBufferModel::BuildFromFile("mobilenet_v1_300x300.tflite");
 
-     // Make the interpreter     
-     std::unique_ptr<tflite::Interpreter> interpreter;
+     // Registers edge TPU custom op handler with Tflite resolver.
      tflite::ops::builtin::BuiltinOpResolver resolver;
-     tflite::InterpreterBuilder(*model.get(), resolver)(&interpreter);
+     resolver.AddCustom(edgetpu::kCustomOp, edgetpu::RegisterCustomOp());
 
-     interpreter->AllocateTensors();
+     // Make the interpreter
+     std::unique_ptr<tflite::Interpreter> interpreter;
+     if( tflite::InterpreterBuilder(*model, resolver)(&interpreter) != kTfLiteOk) {
+         std::cerr << "Cannot create interpreter" << std::endl;
+         return -1;
+     }
+
+     if (interpreter->AllocateTensors() != kTfLiteOk) {
+        std::cerr << "Cannot allocate interpreter tensors" << std::endl;
+        return -1;
+     }
 
      // Load labels
      std::vector<std::string> labels;
@@ -86,8 +106,10 @@ int main(int /*argc*/, char** /*argv*/)
         const auto tResize = std::chrono::high_resolution_clock::now();
 
         {
-            interpreter->SetAllowFp16PrecisionForFp32(true);
-            interpreter->SetNumThreads(4);
+            //interpreter->SetAllowFp16PrecisionForFp32(true);
+            // Binds a context with a specific interpreter.
+            interpreter->SetExternalContext(kTfLiteEdgeTpuContext, tpuContext.get());
+            interpreter->SetNumThreads(1);
 
 #if 0
             std::cout << "tensors size: " << interpreter->tensors_size() << "\n";
@@ -98,7 +120,10 @@ int main(int /*argc*/, char** /*argv*/)
 #endif
 
             // run model
-            interpreter->Invoke();
+            if (interpreter->Invoke() != kTfLiteOk) {
+                std::cerr << "Cannot invoke interpreter" << std::endl;
+                return 1;
+            }
         }
         const auto tInvoke = std::chrono::high_resolution_clock::now();
 

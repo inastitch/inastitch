@@ -29,6 +29,9 @@ set(TFLITE_BUILD_PATH "/home/pi/tensorflow/build/")
 include_directories(${TFLITE_SRC_PATH})
 include_directories(${TFLITE_BUILD_PATH}/flatbuffers/include/)
 
+## EdgeTPU
+set(EDGETPU_RUNTIME_PATH "/home/pi/tensorflow/edgetpu_runtime/")
+include_directories("${EDGETPU_RUNTIME_PATH}/libedgetpu/")
 
 add_executable(tf_demo
     main.cpp
@@ -49,6 +52,10 @@ target_link_libraries(tf_demo
     ${TFLITE_BUILD_PATH}/_deps/flatbuffers-build/libflatbuffers.a
     ${TFLITE_BUILD_PATH}/_deps/farmhash-build/libfarmhash.a
     ${TFLITE_BUILD_PATH}/_deps/fft2d-build/libfft2d_fftsg.a
+
+    # EdgeTPU
+    # -L${EDGETPU_RUNTIME_PATH}/libedgetpu/direct/k8/
+    -l:libedgetpu.so.1.0
 
     -lgtk-x11-2.0 -lgdk-x11-2.0 -lgdk_pixbuf-2.0 -lcairo -lgobject-2.0 -lglib-2.0
     -ljpeg -lz -pthread -ldl
