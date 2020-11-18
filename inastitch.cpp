@@ -15,7 +15,7 @@
 #include "version.h"
 #include "inastitch/jpeg/include/Decoder.hpp"
 #include "inastitch/jpeg/include/Encoder.hpp"
-#include "inastitch/jpeg/include/MjpegParser.hpp"
+#include "inastitch/jpeg/include/MjpegParserWithPts.hpp"
 #include "inastitch/jpeg/include/RtpJpegParser.hpp"
 #include "inastitch/opengl/include/OpenGlHelper.hpp"
 #include "inastitch/json/include/Matrix.hpp"
@@ -408,9 +408,9 @@ int main(int argc, char** argv)
     std::unique_ptr<GenericInputStreamContext> inStreamContext2;
     if(isFileInput)
     {
-        inStreamContext0 = std::make_unique<InputStreamContext<inastitch::jpeg::MjpegParser>>(inStreamMaxRgbBufferSize, inFilename0);
-        inStreamContext1 = std::make_unique<InputStreamContext<inastitch::jpeg::MjpegParser>>(inStreamMaxRgbBufferSize, inFilename1);
-        inStreamContext2 = std::make_unique<InputStreamContext<inastitch::jpeg::MjpegParser>>(inStreamMaxRgbBufferSize, inFilename2);
+        inStreamContext0 = std::make_unique<InputStreamContext<inastitch::jpeg::MjpegParserWithPts>>(inStreamMaxRgbBufferSize, inFilename0);
+        inStreamContext1 = std::make_unique<InputStreamContext<inastitch::jpeg::MjpegParserWithPts>>(inStreamMaxRgbBufferSize, inFilename1);
+        inStreamContext2 = std::make_unique<InputStreamContext<inastitch::jpeg::MjpegParserWithPts>>(inStreamMaxRgbBufferSize, inFilename2);
     }
     else
     {

@@ -99,6 +99,7 @@ else()
         inastitch/jpeg/src/Decoder.cpp
         inastitch/jpeg/src/Encoder.cpp
         inastitch/jpeg/src/MjpegParser.cpp
+        inastitch/jpeg/src/MjpegParserWithPts.cpp
         inastitch/jpeg/src/RtpJpegParser.cpp
         inastitch/json/src/Matrix.cpp
         inastitch.cpp

@@ -22,28 +22,26 @@ public:
     ~MjpegParser();
 
 public:
-    std::tuple<uint8_t*, uint32_t, uint64_t> getFrame(uint32_t index);
+    std::tuple<uint8_t *, uint32_t> getFrame(uint32_t index);
 
 private:
     bool nextByte(uint8_t &byte);
     uint32_t parseJpeg(uint8_t* const jpegBuffer);
     void nextFrame();
 
-private:
-    static const auto jpegBufferCount = 10;
+public:
+    static const uint32_t jpegBufferCount = 10;
 
 private:
     const uint32_t m_maxJpegBufferSize;
     uint32_t m_currentJpegBufferIndex = 0;
     std::ifstream m_mjpegFile;
-    std::ifstream m_ptsFile;
     uint32_t m_startMarkerCount = 0;
     boost::asio::thread_pool m_threadPool;
 
 private:
     uint8_t** m_jpegBufferArray;
     uint32_t* const m_jpegSizeArray;
-    uint64_t* const m_timestampArray;
 };
 
 

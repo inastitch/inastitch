@@ -16,25 +16,19 @@ inastitch::jpeg::MjpegParser::MjpegParser(std::string filename, uint32_t maxJpeg
     : m_maxJpegBufferSize(maxJpegBufferSize)
     , m_threadPool(1)
     , m_jpegSizeArray( new uint32_t[jpegBufferCount] )
-    , m_timestampArray( new uint64_t[jpegBufferCount] )
 {
     m_mjpegFile = std::ifstream(filename, std::ios::binary);
     std::cout << "Opened MJPEG at " << filename << std::endl;
 
-    const auto ptsFilename = filename + ".pts";
-    m_ptsFile = std::ifstream(ptsFilename);
-    std::cout << "Opened PTS at " << ptsFilename << std::endl;
-
     // init array
     m_jpegBufferArray = new uint8_t*[jpegBufferCount];
-    for(int i=0; i < jpegBufferCount; i++) {
+    for(uint32_t i=0; i < jpegBufferCount; i++) {
         m_jpegBufferArray[i] = new uint8_t[m_maxJpegBufferSize];
         m_jpegSizeArray[i] = 0;
-        m_timestampArray[i] = 0;
     }
 
     // fill array
-    for(int i=0; i < jpegBufferCount; i++) {
+    for(uint32_t i=0; i < jpegBufferCount; i++) {
         nextFrame();
     }
 }
@@ -42,13 +36,12 @@ inastitch::jpeg::MjpegParser::MjpegParser(std::string filename, uint32_t maxJpeg
 inastitch::jpeg::MjpegParser::~MjpegParser()
 {
     delete[] m_jpegSizeArray;
-    delete[] m_timestampArray;
-    for(int i = 0; i < jpegBufferCount; i++) {
+
+    for(uint32_t i = 0; i < jpegBufferCount; i++) {
         delete[] m_jpegBufferArray[i];
     }
 
     m_mjpegFile.close();
-    m_ptsFile.close();
 }
 
 bool inastitch::jpeg::MjpegParser::nextByte(uint8_t &byte)
@@ -157,16 +150,11 @@ void inastitch::jpeg::MjpegParser::nextFrame()
     // read one jpeg from MJPEG file
     m_jpegSizeArray[nextJpegBufferIdx] = parseJpeg(m_jpegBufferArray[nextJpegBufferIdx]);
 
-    // read one line from PTS file
-    uint64_t absTime, relTime, offTime;
-    m_ptsFile >> absTime >> relTime >> offTime;
-    m_timestampArray[nextJpegBufferIdx] = absTime;
-
     // at last
     m_currentJpegBufferIndex = nextJpegBufferIdx;
 }
 
-std::tuple<uint8_t*, uint32_t, uint64_t> inastitch::jpeg::MjpegParser::getFrame(uint32_t index)
+std::tuple<uint8_t*, uint32_t> inastitch::jpeg::MjpegParser::getFrame(uint32_t index)
 {
     boost::asio::post(m_threadPool,
         [&]
@@ -176,5 +164,5 @@ std::tuple<uint8_t*, uint32_t, uint64_t> inastitch::jpeg::MjpegParser::getFrame(
     );
 
     const auto bufferArrayIndex = m_currentJpegBufferIndex + index;
-    return { m_jpegBufferArray[bufferArrayIndex], m_jpegSizeArray[bufferArrayIndex], m_timestampArray[bufferArrayIndex] };
+    return { m_jpegBufferArray[bufferArrayIndex], m_jpegSizeArray[bufferArrayIndex] };
 }
