@@ -5,19 +5,19 @@
 
 // Local includes:
 #include "inastitch/jpeg/include/MjpegParserWithPts.hpp"
-#include "inastitch/jpeg/include/MjpegParser.hpp"
+#include "inastitch/jpeg/include/MjpegParserAsync.hpp"
 
 // Std includes:
 #include <iostream>
 
 inastitch::jpeg::MjpegParserWithPts::MjpegParserWithPts(std::string filename, uint32_t maxJpegBufferSize)
-    : ptsCount( inastitch::jpeg::MjpegParser::jpegBufferCount )
+    : ptsCount( inastitch::jpeg::MjpegParserAsync::jpegBufferCount )
     , m_timestampArray( new uint64_t[ptsCount] )
 {
-    //m_mjpegFile = std::ifstream(filename, std::ios::binary);
-    //std::cout << "Opened MJPEG at " << filename << std::endl;
+    m_mjpegFile = std::ifstream(filename, std::ios::binary);
+    std::cout << "Opened MJPEG at " << filename << std::endl;
 
-    m_mjpegParser = std::make_unique<inastitch::jpeg::MjpegParser>(filename, maxJpegBufferSize);
+    m_mjpegParser = std::make_unique<inastitch::jpeg::MjpegParserAsync>(m_mjpegFile, maxJpegBufferSize);
 
     const auto ptsFilename = filename + ".pts";
     m_ptsFile = std::ifstream(ptsFilename);

@@ -58,6 +58,8 @@ else()
     )
 
     add_executable(inartpsend
+        inastitch/jpeg/src/MjpegParser.cpp
+        inastitch/jpeg/src/MjpegParserAsync.cpp
         inastitch/jpeg/src/RtpJpegEncoder.cpp
         inartpsend.cpp
         ${CMAKE_CURRENT_BINARY_DIR}/version.cpp
@@ -99,6 +101,7 @@ else()
         inastitch/jpeg/src/Decoder.cpp
         inastitch/jpeg/src/Encoder.cpp
         inastitch/jpeg/src/MjpegParser.cpp
+        inastitch/jpeg/src/MjpegParserAsync.cpp
         inastitch/jpeg/src/MjpegParserWithPts.cpp
         inastitch/jpeg/src/RtpJpegParser.cpp
         inastitch/json/src/Matrix.cpp

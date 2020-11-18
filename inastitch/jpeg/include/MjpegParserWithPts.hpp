@@ -14,7 +14,7 @@
 namespace inastitch {
 namespace jpeg {
 
-class MjpegParser;
+class MjpegParserAsync;
 
 class MjpegParserWithPts
 {
@@ -28,11 +28,12 @@ public:
 private:
     const int ptsCount;
     std::ifstream m_ptsFile;
+    std::ifstream m_mjpegFile;
     uint64_t* const m_timestampArray;
     uint32_t m_currentPtsIndex = 0;
 
 private:
-    std::unique_ptr<MjpegParser> m_mjpegParser;
+    std::unique_ptr<MjpegParserAsync> m_mjpegParser;
 };
 
 

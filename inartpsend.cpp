@@ -9,6 +9,7 @@
 
 // Local includes:
 #include "version.h"
+#include "inastitch/jpeg/include/MjpegParser.hpp"
 #include "inastitch/jpeg/include/RtpJpegEncoder.hpp"
 
 // C includes:
@@ -96,100 +97,24 @@ int main(int argc, char** argv)
     // Note: JPEG data should be smaller than RAW data
 
     // read JPEG from pipe
-    std::fstream pipeIn = std::fstream("/dev/stdin", std::ios::in | std::ios::binary);
+    std::ifstream pipeIn = std::ifstream("/dev/stdin", std::ios::binary);
 
     const auto outStreamMaxRgbBufferSize = jpegWidth * jpegHeight * 3;
     uint8_t *jpegBuffer = new uint8_t[outStreamMaxRgbBufferSize];
 
-    // MJPEG mini parser
-    // - 0xFFD8: start of image
-    // - 0xFFD9: end of image
-    // See: https://stackoverflow.com/a/4614629
-
     uint32_t frameIdx = 0;
     while(true)
     {
+        const auto jpegBufferSize = inastitch::jpeg::MjpegParser::parseJpeg(pipeIn, jpegBuffer);
+
         int64_t timestamp = 0;
-        uint32_t jpegBufferOffset = 0;
-        uint32_t pendingData = 0;
-        char b = 0x00;
-        uint8_t b1 = 0x00, b2 = 0x00;
-        while(pipeIn.read(&b, 1))
+        if(!isNotTimestamp)
         {
-            b2 = b;
-            //std::cout << std::hex << static_cast<int>(b1) << " " << std::flush;
-
-            // start marker
-            if( (pendingData == 0) && (b1 == 0xFF) && (b2 == 0xD8) )
-            {
-                jpegBufferOffset = 0;
-                jpegBuffer[jpegBufferOffset++] = b1;
-                jpegBuffer[jpegBufferOffset++] = b2;
-            }
-            else
-            // end marker
-            if( (pendingData == 0) && (b1 == 0xFF) && (b2 == 0xD9) )
-            {
-                jpegBuffer[jpegBufferOffset++] = b2;
-
-                if(!isNotTimestamp)
-                {
-                    // reached the end of the JPEG data
-                    // => read timestamp appended to it
-                    pipeIn.read((char*)&timestamp, sizeof(int64_t));
-                }
-
-                break;
-            }
-            else
-            // bit stuffing
-            if( (pendingData == 0) && (b1 == 0xFF) && (b2 == 0x00) )
-            {
-                jpegBuffer[jpegBufferOffset++] = b2;
-            }
-            else
-            // marker with length
-            if( (pendingData == 0) &&
-                (b1 == 0xFF) ) //&& (b2 != 0x00) && (b2 != 0x01) && !( (b2 >= 0xD0) && (b2 <= 0xD9) ) )
-            {
-                //const uint32_t m1 = b1, m2 = b2;
-
-                if(!(b2 == 0xC0 ||
-                     b2 == 0xC2 ||
-                     b2 == 0xC4 ||
-                     b2 == 0xDB ||
-                     b2 == 0xDA ||
-                     b2  & 0xE0 ||
-                     b2 == 0xFE   ))
-                {
-                    std::cerr << "Unexpected JPEG marker, abort..." << std::endl;
-                    std::abort();
-                }
-                jpegBuffer[jpegBufferOffset++] = b2;
-
-                pipeIn.read(&b, 1);
-                b1 = b;
-                pipeIn.read(&b, 1);
-                b2 = b;
-                // big endian length
-                pendingData += static_cast<uint16_t>(b1) << 8;
-                pendingData += b2;
-                //std::cout << std::hex << m1 << m2 << " " << std::dec << pendingData << std::endl;
-
-                jpegBuffer[jpegBufferOffset++] = b1;
-                jpegBuffer[jpegBufferOffset++] = b2;
-                pendingData -= 1;
-            }
-            else
-            {
-                jpegBuffer[jpegBufferOffset++] = b2;
-                if(pendingData > 0)
-                    pendingData--;
-            }
-
-            b1 = b2;
+            // reached the end of the JPEG data
+            // => read timestamp appended to it
+            pipeIn.read((char*)&timestamp, sizeof(int64_t));
         }
-        const auto jpegBufferSize = jpegBufferOffset;
+
         if(isVerbose) {
             std::cout << "Frame " << jpegBufferSize << " bytes with t=" << timestamp << std::endl;
         }
