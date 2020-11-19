@@ -19,6 +19,7 @@ namespace helper
 
 void checkError(const char*, const char*, int);
 
+// Define DEBUG to check every OpenGL call for error (will reduce performances)
 //#define DEBUG
 #ifdef DEBUG
     #define GL_CHECK(statement) do                                                   \

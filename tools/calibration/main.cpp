@@ -6,7 +6,7 @@
 // Stitching calibration using OpenCV
 // Created on 06.08.2020
 // by Vincent Jordan
-// inspired from:
+// inspired by:
 // https://www.pyimagesearch.com/2016/01/11/opencv-panorama-stitching/
 
 // Local includes:
@@ -34,6 +34,10 @@ namespace po = boost::program_options;
 #include <fstream>
 #include <chrono>
 
+/// @brief Standalone calibration tool
+///
+/// Take two input images (center and right) and generate the homography matrix for the right image
+/// to stitch on the center image. The matrix is normalized for processing with OpenGL pixel shader.
 int main(int argc, char** argv)
 {
     std::string centerImagePath, rightImagePath;

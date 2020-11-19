@@ -13,7 +13,16 @@
 namespace inastitch {
 namespace jpeg {
 
-
+/// @brief Hybrid RTP/AVTP encoder for JPEG frames
+///
+/// RTP/JPEG and AVTP/JPEG over UDP are two very similar protocols. They can be encoded by the
+/// same function. Please note that standard AVTP is usually transmitted over raw Ethernet (instead
+/// of well-known IP). AVTP over UDP is officially specified in the standard, but less common.
+///
+/// @note This class uses standard sockets for network access. Raw Ethernet would require a
+/// completely different implementation (e.g., libpcap).
+///
+/// @see Have a look at the implementation of @ref sendFrame for references about the specification.
 class RtpJpegEncoder
 {
 public:

@@ -15,8 +15,7 @@
 // Note: see taocpp documentation at
 // https://github.com/taocpp/json/blob/master/doc/Common-Use-Cases.md
 
-
-void inastitch::json::glmMat4ToJson(const glm::mat4 &mat, tao::json::basic_value<tao::json::traits>::array_t &array)
+void inastitch::json::GlmJson::glmMat4ToJson(const glm::mat4 &mat, tao::json::basic_value<tao::json::traits>::array_t &array)
 {
     for(uint32_t rowIdx=0; rowIdx<4; rowIdx++)
     {
@@ -28,7 +27,7 @@ void inastitch::json::glmMat4ToJson(const glm::mat4 &mat, tao::json::basic_value
     }
 };
 
-void inastitch::json::glmMat3ToJson(const glm::mat3 &mat, tao::json::basic_value<tao::json::traits>::array_t &array)
+void inastitch::json::GlmJson::glmMat3ToJson(const glm::mat3 &mat, tao::json::basic_value<tao::json::traits>::array_t &array)
 {
     for(uint32_t rowIdx=0; rowIdx<3; rowIdx++)
     {
@@ -40,7 +39,7 @@ void inastitch::json::glmMat3ToJson(const glm::mat3 &mat, tao::json::basic_value
     }
 };
 
-void inastitch::json::jsonToGlmMat4(const std::vector<float> &array, glm::mat4 &mat)
+void inastitch::json::GlmJson::jsonToGlmMat4(const std::vector<float> &array, glm::mat4 &mat)
 {
     for(uint32_t rowIdx=0; rowIdx<4; rowIdx++)
     {
@@ -52,7 +51,7 @@ void inastitch::json::jsonToGlmMat4(const std::vector<float> &array, glm::mat4 &
     }
 };
 
-void inastitch::json::jsonToGlmMat3(const std::vector<float> &array, glm::mat3x3 &mat)
+void inastitch::json::GlmJson::jsonToGlmMat3(const std::vector<float> &array, glm::mat3x3 &mat)
 {
     for(uint32_t rowIdx=0; rowIdx<3; rowIdx++)
     {

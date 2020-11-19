@@ -16,6 +16,11 @@ namespace jpeg {
 
 class MjpegParserAsync;
 
+/// @brief Asynchronous MJPEG parser with PTS
+///
+/// This class adds timestamp information from a PTS file along with MJPEG video data.
+/// Unlike H264 and other video encoding formats, MJPEG is made a simple JPEG images which do not
+/// include any presentation timestamps.
 class MjpegParserWithPts
 {
 public:

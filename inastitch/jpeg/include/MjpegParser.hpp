@@ -9,7 +9,17 @@
 namespace inastitch {
 namespace jpeg {
 
-
+/// @brief MJPEG parser class
+///
+/// An MJPEG video file is simply the concatenation of JPEG images without any additional data.
+/// There is no sound of information about the framerate or timestamps.
+///
+/// To make a new MJPEG video, you can just use the @c cat command:
+/// @verbatim cat *.jpg > video.mjpeg @endverbatim
+///
+/// Since each JPEG file has a different size, the parser decodes just enough from the JPEG header
+/// to find the end of the file, and jumps there. Frames can be decompressed with a standard JPEG
+/// library.
 class MjpegParser
 {
 public:

@@ -7,9 +7,13 @@
 // Created on 28.05.2020
 // by Vincent Jordan
 
-#define USE_OPENGL_PBO 1
-// Note: Enabling PBO requires OpenGL ES 3.0
-// See "#define GLFW_INCLUDE_ES3" below.
+/// @mainpage Inastitch
+/// Welcome to @e inastitch, Inatech's open-source stitcher.
+///
+/// @e inastitch merges (stitches) video streams in a seamless way, by correcting the perspective of
+/// each input frames using OpenGL.
+///
+/// Start at the documentation of the main file: @ref inastitch.cpp.
 
 // Local includes:
 #include "version.h"
@@ -39,6 +43,10 @@ namespace po = boost::program_options;
 // Use OpenGL ES 3.x
 #define GLFW_INCLUDE_ES3
 #include <GLFW/glfw3.h>
+
+#define USE_OPENGL_PBO 1
+// Note: Enabling PBO requires OpenGL ES 3.0
+// See "#define GLFW_INCLUDE_ES3"
 
 // Std includes:
 #include <limits>
@@ -298,7 +306,8 @@ int main(int argc, char** argv)
         {
             std::cout << "maxFrameSkip value is too high for built-in buffers. "
                       << "Rebuild inastitch with larger input buffer."
-                      << "Setting maxFrameSkip=" << inastitch::jpeg::MjpegParserAsync::jpegBufferCount << std::endl;
+                      << "Setting maxFrameSkip="
+                      << inastitch::jpeg::MjpegParserAsync::jpegBufferCount << std::endl;
             maxFrameSkip = inastitch::jpeg::MjpegParserAsync::jpegBufferCount;
         }
     }
@@ -400,17 +409,17 @@ int main(int argc, char** argv)
         const tao::json::value json = tao::json::from_file(inMatrixJsonFilename);
 
         using namespace inastitch::json;
-        jsonToGlmMat4(json.at("texture0").as<std::vector<float>>("model"), modelMat[0]);
-        jsonToGlmMat4(json.at("texture0").as<std::vector<float>>("view"), viewMat[0]);
-        jsonToGlmMat3(json.at("texture0").as<std::vector<float>>("warp"), texWarpMat[0]);
+        GlmJson::jsonToGlmMat4(json.at("texture0").as<std::vector<float>>("model"), modelMat[0]);
+        GlmJson::jsonToGlmMat4(json.at("texture0").as<std::vector<float>>("view"), viewMat[0]);
+        GlmJson::jsonToGlmMat3(json.at("texture0").as<std::vector<float>>("warp"), texWarpMat[0]);
 
-        jsonToGlmMat4(json.at("texture1").as<std::vector<float>>("model"), modelMat[1]);
-        jsonToGlmMat4(json.at("texture1").as<std::vector<float>>("view"), viewMat[1]);
-        jsonToGlmMat3(json.at("texture1").as<std::vector<float>>("warp"), texWarpMat[1]);
+        GlmJson::jsonToGlmMat4(json.at("texture1").as<std::vector<float>>("model"), modelMat[1]);
+        GlmJson::jsonToGlmMat4(json.at("texture1").as<std::vector<float>>("view"), viewMat[1]);
+        GlmJson::jsonToGlmMat3(json.at("texture1").as<std::vector<float>>("warp"), texWarpMat[1]);
 
-        jsonToGlmMat4(json.at("texture2").as<std::vector<float>>("model"), modelMat[2]);
-        jsonToGlmMat4(json.at("texture2").as<std::vector<float>>("view"), viewMat[2]);
-        jsonToGlmMat3(json.at("texture2").as<std::vector<float>>("warp"), texWarpMat[2]);
+        GlmJson::jsonToGlmMat4(json.at("texture2").as<std::vector<float>>("model"), modelMat[2]);
+        GlmJson::jsonToGlmMat4(json.at("texture2").as<std::vector<float>>("view"), viewMat[2]);
+        GlmJson::jsonToGlmMat3(json.at("texture2").as<std::vector<float>>("warp"), texWarpMat[2]);
     }
 
     const auto inStreamMaxRgbBufferSize = inStreamWidth * inStreamHeight * 4; // RGBA format

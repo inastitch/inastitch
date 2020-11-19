@@ -25,6 +25,27 @@ namespace po = boost::program_options;
 #include <sstream>
 #include <fstream>
 
+/// @brief inartpsend
+///
+/// This tool takes an MJPEG stream from stdin and sends it over UDP Ethernet with either:
+///  - RTP/JPEG
+///  - AVTP/JPEG (UDP variant only)
+///
+/// It is designed primarly to work with the Raspberry Pi camera tool:
+/// @verbatim raspivid -fl -t 0 -w 640 -h 480 -fps 100 -md 6 -cd MJPEG -o - | inartpsend --out-addr ${RTP_ADDR} --out-port ${RTP_PORT} --isMode1 --log-dlt --no-ts @endverbatim
+///
+/// You can also use @c gstreamer with @c fdsink:
+/// @verbatim gst-launch-1.0 videotestsrc ! jpegenc ! fdsink | inartpsend --no-ts --isMode1 --width 320 --height 240 @endverbatim
+///
+/// Or any other tool which outputs MJPEG on stdout.
+///
+/// @note In addition to standard MJPEG, this tool also supports a non-standard MJPEG stream in
+/// which the @e presentation @e timestamp of each frame is appended as a 64-bit integer after
+/// each JPEG data.
+/// To be used with a modified @c raspivid with camera sync called @c raspivid-inatech.
+/// See: https://github.com/inastitch/raspivid-inatech
+///
+/// @see Details about RTP or AVTP protocol are found in @ref inastitch::jpeg::RtpJpegEncoder.
 int main(int argc, char** argv)
 {
     bool mjpegIsType1 = false;

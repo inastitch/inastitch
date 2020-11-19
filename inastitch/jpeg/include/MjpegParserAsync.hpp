@@ -14,7 +14,9 @@
 namespace inastitch {
 namespace jpeg {
 
-
+/// @brief Asynchronous MJPEG parser
+///
+/// This class uses @ref MjpegParser in a side thread to parse frames ahead of time.
 class MjpegParserAsync
 {
 public:

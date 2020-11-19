@@ -10,7 +10,9 @@
 namespace inastitch {
 namespace jpeg {
 
-
+/// @brief JPEG encoder class
+///
+/// This class is just a wrapper around @c libturbojpeg to compress a JPEG data buffer.
 class Encoder
 {
 public:
