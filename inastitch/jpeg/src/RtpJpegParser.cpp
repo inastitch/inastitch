@@ -7,6 +7,7 @@
 #include "inastitch/jpeg/include/RtpJpegParser.hpp"
 
 // C includes:
+#include <assert.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -135,7 +136,7 @@ inastitch::jpeg::RtpJpegParser::~RtpJpegParser()
 
 std::tuple<uint8_t*, uint32_t, uint64_t> inastitch::jpeg::RtpJpegParser::getFrame(uint32_t index)
 {
-    const auto bufferArrayIndex = m_currentJpegBufferIndex + index;
+    const auto bufferArrayIndex = (m_currentJpegBufferIndex + index) % jpegBufferCount;
     return { m_jpegBufferArray[bufferArrayIndex], m_jpegSizeArray[bufferArrayIndex], m_timestampArray[bufferArrayIndex] };
 }
 
@@ -445,6 +446,8 @@ bool inastitch::jpeg::RtpJpegParser::decodePayload(const uint8_t *socketBuffer, 
     //std::cout << "dataCopy: " << std::dec << dataLength << " bytes of " << dataSize << std::endl;
     for(uint32_t i=0; i<dataLength; i++)
     {
+        const auto dataOffset = m_currentJpegBufferOffset + i;
+        assert(dataOffset < m_maxJpegBufferSize);
         jpegBuffer[m_currentJpegBufferOffset + i] = get8(packetPtr);
     }
     m_currentJpegBufferOffset += dataLength;

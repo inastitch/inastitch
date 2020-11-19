@@ -15,6 +15,7 @@
 #include "version.h"
 #include "inastitch/jpeg/include/Decoder.hpp"
 #include "inastitch/jpeg/include/Encoder.hpp"
+#include "inastitch/jpeg/include/MjpegParserAsync.hpp"
 #include "inastitch/jpeg/include/MjpegParserWithPts.hpp"
 #include "inastitch/jpeg/include/RtpJpegParser.hpp"
 #include "inastitch/opengl/include/OpenGlHelper.hpp"
@@ -191,6 +192,7 @@ int main(int argc, char** argv)
     std::string frameDumpOffsetTimeStr;
     uint64_t frameDumpOffsetTime;
     uint64_t maxDelay;
+    uint32_t maxFrameSkip;
     bool isDumpFrameIdRelativeToOffset = false;
     bool isOverlayEnabled = false;
     bool isStatsEnabled = false;
@@ -247,6 +249,8 @@ int main(int argc, char** argv)
              "Dump frame starting at TIME (sysclk unix timestamp in us)")
             ("max-delay", po::value<uint64_t>(&maxDelay)->default_value(std::numeric_limits<uint64_t>::max()), // delay in us
              "Max delay")
+            ("max-frame-skip", po::value<uint32_t>(&maxFrameSkip)->default_value(10),
+             "Maximum frame skip in input buffer")
             ("frame-dump-id-from-0", "Dump frame ID relative to offset (i.e., always starts at 0), rather start of stream")
             ("print-overlay", "Print text overlay on output frame")
 
@@ -288,6 +292,14 @@ int main(int argc, char** argv)
         {
             std::cout << "Cannot mix file and network stream inputs" << std::endl;
             return 0;
+        }
+
+        if(maxFrameSkip > inastitch::jpeg::MjpegParserAsync::jpegBufferCount)
+        {
+            std::cout << "maxFrameSkip value is too high for built-in buffers. "
+                      << "Rebuild inastitch with larger input buffer."
+                      << "Setting maxFrameSkip=" << inastitch::jpeg::MjpegParserAsync::jpegBufferCount << std::endl;
+            maxFrameSkip = inastitch::jpeg::MjpegParserAsync::jpegBufferCount;
         }
     }
 
@@ -419,13 +431,6 @@ int main(int argc, char** argv)
         inStreamContext2 = std::make_unique<InputStreamContext<inastitch::jpeg::RtpJpegParser>>(inStreamMaxRgbBufferSize, inSocketPort2);
     }
 
-    // parse first frames before entering the loop
-    {
-        inStreamContext0->getFrame(0);
-        inStreamContext1->getFrame(0);
-        inStreamContext2->getFrame(0);
-    }
-
     // prepare output file
     auto outJpegFile = std::ofstream(outFilename, std::ios::binary);
     auto outPtsFile = std::ofstream(outFilename + ".pts");
@@ -444,34 +449,39 @@ int main(int argc, char** argv)
     {
         const auto frameT1 = std::chrono::high_resolution_clock::now();
 
+        uint32_t bufferIdx0 = 0;
+        uint32_t bufferIdx1 = 0;
+        uint32_t bufferIdx2 = 0;
+
+        inStreamContext0->getFrame(bufferIdx0);
+        inStreamContext1->getFrame(bufferIdx1);
+        inStreamContext2->getFrame(bufferIdx2);
+
         uint64_t frameAbsTime = 0;
+        for(uint32_t skipCount=0; skipCount < maxFrameSkip; skipCount++)
         {
             // min of 3 input frame timestamps
-            frameAbsTime = std::min(inStreamContext0->absTime, std::min(inStreamContext1->absTime, inStreamContext2->absTime));
-            inStreamContext0->timeDelay = inStreamContext0->absTime - frameAbsTime;
-            inStreamContext1->timeDelay = inStreamContext1->absTime - frameAbsTime;
-            inStreamContext2->timeDelay = inStreamContext2->absTime - frameAbsTime;
+            frameAbsTime = std::max(inStreamContext0->absTime, std::max(inStreamContext1->absTime, inStreamContext2->absTime));
+            inStreamContext0->timeDelay = frameAbsTime - inStreamContext0->absTime;
+            inStreamContext1->timeDelay = frameAbsTime - inStreamContext1->absTime;
+            inStreamContext2->timeDelay = frameAbsTime - inStreamContext2->absTime;
 
-            bool eofContext0 = false, eofContext1 = false, eofContext2 = false;
+            const bool isFrame0Delayed = inStreamContext0->timeDelay > maxDelay;
+            const bool isFrame1Delayed = inStreamContext1->timeDelay > maxDelay;
+            const bool isFrame2Delayed = inStreamContext2->timeDelay > maxDelay;
 
-            if(inStreamContext0->timeDelay < maxDelay)
+            if(isFrame0Delayed || isFrame1Delayed || isFrame2Delayed)
             {
-                eofContext0 = !inStreamContext0->getFrame(0);
+                // Note: the input frame with timeDelay==0 is the latest frame arrived
+                // It might not sync with the other frames if they are not arrived yet (delayed)
+                // => skip the latest frame and try again
+                if(inStreamContext0->timeDelay == 0) inStreamContext0->getFrame(++bufferIdx0);
+                if(inStreamContext1->timeDelay == 0) inStreamContext1->getFrame(++bufferIdx1);
+                if(inStreamContext2->timeDelay == 0) inStreamContext2->getFrame(++bufferIdx2);
             }
-            if(inStreamContext1->timeDelay < maxDelay)
+            else
             {
-                eofContext1 = !inStreamContext1->getFrame(0);
-            }
-            if(inStreamContext2->timeDelay < maxDelay)
-            {
-                eofContext2 = !inStreamContext2->getFrame(0);
-            }
-
-            if(eofContext0 && eofContext1 && eofContext2)
-            {
-                // No more frames to process,
-                // break rendering loop
-                //break;
+                break;
             }
         }
         if(isFirstFrame)
@@ -687,7 +697,7 @@ int main(int argc, char** argv)
             frameT8 = std::chrono::high_resolution_clock::now();
             // read back pixel time
 
-#if 0
+#if 1
             if(isFrameDumped )
             {
                 boost::asio::post(threadPoolOutStream,
@@ -735,9 +745,9 @@ int main(int argc, char** argv)
         
         const auto frameT10 = std::chrono::high_resolution_clock::now();
         std::cout << "[" << frameCount << "," << frameDumpCount
-                  << "] t0:" << inStreamContext0->timeDelay
-                  << ", t1:" << inStreamContext1->timeDelay
-                  << ", t2:" << inStreamContext2->timeDelay << std::endl;
+                  << "] t0(" << bufferIdx0 << "):" << inStreamContext0->timeDelay
+                  << ", t1(" << bufferIdx1 << "):" << inStreamContext1->timeDelay
+                  << ", t2(" << bufferIdx2 << "):" << inStreamContext2->timeDelay << std::endl;
 
         if(isStatsEnabled)
         std::cout << "inParse:" << std::chrono::duration_cast<std::chrono::microseconds>(frameT2-frameT1).count() << "us"
