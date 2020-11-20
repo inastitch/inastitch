@@ -24,6 +24,7 @@
 #include "inastitch/jpeg/include/RtpJpegParser.hpp"
 #include "inastitch/opengl/include/OpenGlHelper.hpp"
 #include "inastitch/json/include/Matrix.hpp"
+#include "inastitch/opencv/include/HomographyMatrix.hpp"
 
 // Boost includes:
 #include <boost/program_options.hpp>
@@ -135,6 +136,20 @@ struct GenericInputStreamContext
         for(uint32_t i=0; i<rgbaBufferSize; i++)
         {
             jpegDecoderPtr->rgbaBuffer()[i] = 0xFF;
+        }
+    }
+
+    void dumpJpegAndPts(const std::string &filename)
+    {
+        {
+            auto jpegFile = std::fstream(filename, std::ios::out | std::ios::binary);
+            jpegFile.write((char*)jpegBuffer, jpegBufferSize);
+            jpegFile.close();
+        }
+        {
+            auto ptsFile = std::fstream(filename + ".pts", std::ios::out);
+            ptsFile << absTime << " " << relTime << " " << offTime << std::endl;
+            ptsFile.close();
         }
     }
 
@@ -507,19 +522,7 @@ int main(int argc, char** argv)
                                    (frameAbsTime >= frameDumpOffsetTime);
         const auto frameDumpIdx = isDumpFrameIdRelativeToOffset ? frameDumpCount: frameCount;
 
-        auto dumpJpegAndPtsAndTxt = [](const decltype(inStreamContext0) &inStreamCtx, const std::string &filename)
-        {
-            {
-                auto jpegFile = std::fstream(filename, std::ios::out | std::ios::binary);
-                jpegFile.write((char*)inStreamCtx->jpegBuffer, inStreamCtx->jpegBufferSize);
-                jpegFile.close();
-            }
-            {
-                auto ptsFile = std::fstream(filename + ".pts", std::ios::out);
-                ptsFile << inStreamCtx->absTime << " " << inStreamCtx->relTime << " " << inStreamCtx->offTime << std::endl;
-                ptsFile.close();
-            }
-        };
+
 
         boost::asio::thread_pool threadPoolInDecode(inTpoolSize);
         boost::asio::post(threadPoolInDecode,
@@ -529,7 +532,7 @@ int main(int argc, char** argv)
                 {
                     if(isFrameDumped && !frameDumpPath.empty())
                     {
-                        dumpJpegAndPtsAndTxt(inStreamContext0, frameDumpPath + std::to_string(frameDumpIdx) + "in0.jpg");
+                        inStreamContext0->dumpJpegAndPts(frameDumpPath + std::to_string(frameDumpIdx) + "in0.jpg");
                     }
                     inStreamContext0->decodeJpeg();
                 } else {
@@ -544,7 +547,7 @@ int main(int argc, char** argv)
                 {
                     if(isFrameDumped && !frameDumpPath.empty())
                     {
-                        dumpJpegAndPtsAndTxt(inStreamContext1, frameDumpPath + std::to_string(frameDumpIdx) + "in1.jpg");
+                        inStreamContext1->dumpJpegAndPts(frameDumpPath + std::to_string(frameDumpIdx) + "in1.jpg");
                     }
                     inStreamContext1->decodeJpeg();
                 } else {
@@ -559,7 +562,7 @@ int main(int argc, char** argv)
                 {
                     if(isFrameDumped && !frameDumpPath.empty())
                     {
-                        dumpJpegAndPtsAndTxt(inStreamContext2, frameDumpPath + std::to_string(frameDumpIdx) + "in2.jpg");
+                        inStreamContext2->dumpJpegAndPts(frameDumpPath + std::to_string(frameDumpIdx) + "in2.jpg");
                     }
                     inStreamContext2->decodeJpeg();
                 } else {
@@ -571,6 +574,42 @@ int main(int argc, char** argv)
 
         const auto frameT3 = std::chrono::high_resolution_clock::now();
         // input frame dump time
+
+        if(glfwGetKey(glWindow, GLFW_KEY_ENTER) == GLFW_PRESS)
+        {
+            std::cout << "Start calibration..." << std::endl;
+
+            inStreamContext0->dumpJpegAndPts("inastitch_in0.jpg");
+            inStreamContext1->dumpJpegAndPts("inastitch_in1.jpg");
+            inStreamContext2->dumpJpegAndPts("inastitch_in2.jpg");
+
+            const auto minMatchCount = 25;
+            float matrixL[3][3];
+            const auto isLeftHomoValid = inastitch::opencv::HomographyMatrix::find(
+                "inastitch_in0.jpg", "inastitch_in1.jpg",
+                true, minMatchCount, matrixL
+            );
+
+            float matrixR[3][3];
+            const auto isRightHomoValid = inastitch::opencv::HomographyMatrix::find(
+                "inastitch_in0.jpg", "inastitch_in2.jpg",
+                false, minMatchCount, matrixR
+            );
+
+            for(uint32_t rowIdx=0; rowIdx<3; rowIdx++)
+            {
+                for(uint32_t colIdx=0; colIdx<3; colIdx++)
+                {
+                    // Note: texWarpMat is "column first"
+
+                    if(isLeftHomoValid)
+                        texWarpMat[1][colIdx][rowIdx] = matrixL[rowIdx][colIdx];
+
+                    if(isRightHomoValid)
+                        texWarpMat[2][colIdx][rowIdx] = matrixR[rowIdx][colIdx];
+                }
+            }
+        }
 
         uint8_t *bmpBuffer0 = inStreamContext0->rgbaBuffer;
         uint8_t *bmpBuffer1 = inStreamContext1->rgbaBuffer;
@@ -706,7 +745,7 @@ int main(int argc, char** argv)
             frameT8 = std::chrono::high_resolution_clock::now();
             // read back pixel time
 
-#if 1
+#if 0
             if(isFrameDumped )
             {
                 boost::asio::post(threadPoolOutStream,

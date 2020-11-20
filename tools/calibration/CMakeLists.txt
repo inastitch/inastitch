@@ -22,8 +22,9 @@ project(inastitch_cal
 )
 
 add_executable(inastitch_cal
-   main.cpp
-   ${CMAKE_BINARY_DIR}/version.cpp
+    ../../inastitch/opencv/src/HomographyMatrix.cpp
+    main.cpp
+    ${CMAKE_BINARY_DIR}/version.cpp
 )
 
 find_library(BOOST_PROG_OPTS_STATIC_LIB libboost_program_options.a)

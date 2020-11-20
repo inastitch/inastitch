@@ -4,11 +4,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 # Note: Cannot build both packages at once?
-# To package inastitch:
+# To package inastitch only:
 # cmake -DCMAKE_BUILD_TYPE=Release -DNO_INARTPSEND=ON ../inastitch/
 # cpack
 #
-# To package inartpsend:
+# To package inartpsend only:
 # cmake -DCMAKE_BUILD_TYPE=Release -DNO_INASTITCH=ON ../inastitch/
 # cpack
 
@@ -95,6 +95,20 @@ else()
     include_directories("${CMAKE_SOURCE_DIR}/include/")
     include_directories("${CMAKE_SOURCE_DIR}/include/libav/")
 
+    # If OPENCV_STATIC_LIB_PATH is not provided,
+    # inastitch is built without OpenCV and live calibration will be disabled.
+    if(EXISTS ${OPENCV_STATIC_LIB_PATH})
+        include_directories("${OPENCV_STATIC_LIB_PATH}/include/opencv4/")
+        file(GLOB OCV_STATIC_LIBS ${OPENCV_STATIC_LIB_PATH}/lib/*.a)
+        file(GLOB OCV_3RD_PARTY_STATIC_LIBS ${OPENCV_STATIC_LIB_PATH}/lib/opencv4/3rdparty/*.a)
+        set(SRC_WITH_OCV inastitch/opencv/src/HomographyMatrix.cpp)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DHAVE_OPENCV")
+    else()
+        set(OCV_STATIC_LIBS "")
+        set(OCV_3RD_PARTY_STATIC_LIBS "")
+        set(SRC_WITH_OCV "")
+    endif()
+
     add_executable(inastitch
         inastitch/opengl/src/OpenGlHelper.cpp
         inastitch/opengl/src/OpenGlTextHelper.cpp
@@ -105,6 +119,7 @@ else()
         inastitch/jpeg/src/MjpegParserWithPts.cpp
         inastitch/jpeg/src/RtpJpegParser.cpp
         inastitch/json/src/Matrix.cpp
+        ${SRC_WITH_OCV}
         inastitch.cpp
         ${CMAKE_BINARY_DIR}/version.cpp
     )
@@ -115,8 +130,17 @@ else()
     target_link_libraries(inastitch
         -lboost_program_options
         #${BOOST_PROG_OPTS_STATIC_LIB}
-        -lturbojpeg
-        #${TURBO_JPEG_STATIC_LIB}
+
+        # OpenCV static libraries
+        # Note: multiples times because of dependencies
+        ${OCV_STATIC_LIBS}
+        ${OCV_STATIC_LIBS}
+        ${OCV_3RD_PARTY_STATIC_LIBS}
+        ${OCV_3RD_PARTY_STATIC_LIBS}
+        -lz -ldl
+
+        #-lturbojpeg
+        ${TURBO_JPEG_STATIC_LIB}
 
         -lGLESv2 -lglfw
         -pthread
