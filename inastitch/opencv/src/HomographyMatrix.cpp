@@ -19,12 +19,30 @@
 
 
 bool inastitch::opencv::HomographyMatrix::find(
-    const std::string &centerImagePath, const std::string &rightImagePath,
+    unsigned char * const centerRgbaBuffer,
+    uint32_t centerRgbaBufferWidth, uint32_t centerRgbaBufferHeight,
+    unsigned char * const rightRgbaBuffer,
+    uint32_t rightRgbaBufferWidth, uint32_t rightRgbaBufferHeight,
     bool isFlipped, uint32_t minMatchCount,
-    float matrix[3][3])
+    float matrix[3][3]
+)
 {
-    cv::Mat centerImage = cv::imread(centerImagePath);
-    cv::Mat rightImage = cv::imread(rightImagePath);
+    // Part0: make OpenCV image matrices from RGBA buffers
+    cv::Mat centerImage;
+    {
+        // OpenCV Mat assumes BGRA format
+        cv::Mat image = cv::Mat(cv::Size(centerRgbaBufferWidth, centerRgbaBufferHeight),
+                                CV_8UC4, centerRgbaBuffer, cv::Mat::AUTO_STEP);
+        cv::cvtColor(image, centerImage, cv::COLOR_RGBA2BGRA);
+    }
+
+    cv::Mat rightImage;
+    {
+        // OpenCV Mat assumes BGRA format
+        cv::Mat image = cv::Mat(cv::Size(rightRgbaBufferWidth, rightRgbaBufferHeight),
+                                CV_8UC4, rightRgbaBuffer, cv::Mat::AUTO_STEP);
+        cv::cvtColor(image, rightImage, cv::COLOR_RGBA2BGRA);
+    }
 
     if(isFlipped) {
         cv::flip(centerImage, centerImage, 1);
@@ -49,7 +67,9 @@ bool inastitch::opencv::HomographyMatrix::find(
         cv::Mat features;
         desc->detectAndCompute(grayImage, cv::noArray(), keypoints, features);
         const auto t2 = std::chrono::high_resolution_clock::now();
-        std::cout << "detectAndCompute:" << std::chrono::duration_cast<std::chrono::microseconds>(t2-t1).count() << "us" << std::endl;
+        std::cout << "detectAndCompute:"
+                  << std::chrono::duration_cast<std::chrono::microseconds>(t2-t1).count() << "us"
+                  << std::endl;
 
         // TODO: make this DLT
         {
@@ -77,7 +97,9 @@ bool inastitch::opencv::HomographyMatrix::find(
     std::vector<std::vector<cv::DMatch>> rawMatchesR;
     matcher->knnMatch(featR /* query */, featC /* train */, rawMatchesR, 2 /* two best matches */ );
     const auto t2 = std::chrono::high_resolution_clock::now();
-    std::cout << "knnMatch:" << std::chrono::duration_cast<std::chrono::microseconds>(t2-t1).count() << "us" << std::endl;
+    std::cout << "knnMatch:"
+            << std::chrono::duration_cast<std::chrono::microseconds>(t2-t1).count() << "us"
+            << std::endl;
 
     std::cout << "rawMatchCount=" << rawMatchesR.size() << std::endl;
 
@@ -139,7 +161,9 @@ bool inastitch::opencv::HomographyMatrix::find(
             const auto t1 = std::chrono::high_resolution_clock::now();
             homoM = cv::findHomography(ptsR, ptsC, cv::RANSAC, reprojThresh);
             const auto t2 = std::chrono::high_resolution_clock::now();
-            std::cout << "findHomography:" << std::chrono::duration_cast<std::chrono::microseconds>(t2-t1).count() << "us" << std::endl;
+            std::cout << "findHomography:"
+                      << std::chrono::duration_cast<std::chrono::microseconds>(t2-t1).count() << "us"
+                      << std::endl;
         }
 
         return homoM;

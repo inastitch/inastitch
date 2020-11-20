@@ -85,10 +85,20 @@ int main(int argc, char** argv)
 	    }
 	}
 
+    cv::Mat centerImage = cv::imread(centerImagePath);
+    cv::Mat rightImage = cv::imread(rightImagePath);
+
+    // HomographyMatrix::find expects RGBA buffers
+    cv::Mat centerImageRgba, rightImageRgba;
+    {
+        cv::cvtColor(centerImage, centerImageRgba, cv::COLOR_BGRA2RGBA);
+        cv::cvtColor(rightImage, rightImageRgba, cv::COLOR_BGRA2RGBA);
+    }
+
     float homographyMatrix[3][3];
     const bool isMatrixValid = inastitch::opencv::HomographyMatrix::find(
-        centerImagePath,
-        rightImagePath,
+        centerImageRgba.data, centerImage.size().width, centerImage.size().height,
+        rightImageRgba.data, rightImage.size().width, rightImage.size().height,
         isFlipped,
         0,
         homographyMatrix

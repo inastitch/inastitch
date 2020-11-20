@@ -24,7 +24,10 @@ private:
     
 public:
     static bool find(
-        const std::string &centerImagePath, const std::string &rightImagePath,
+        unsigned char * const centerRgbaBuffer,
+        uint32_t centerRgbaBufferWidth, uint32_t centerRgbaBufferHeight,
+        unsigned char * const rightRgbaBuffer,
+        uint32_t rightRgbaBufferWidth, uint32_t rightRgbaBufferHeight,
         bool isFlipped, uint32_t minMatchCount,
         float matrix[3][3]
 #ifdef HAVE_OPENCV

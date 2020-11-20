@@ -111,6 +111,11 @@ static const GLfloat vertices[] = {
 // Note: UV texture coordinates are "inverted" to flip texture image,
 //       since OpenGL reads image "upside-down".
 
+/// @brief Polymorphic input stream context
+///
+/// Holds data about the current input video frame.
+/// In a generic way, so it can come from a file or from network (decided at runtime with
+/// command-line parameters).
 struct GenericInputStreamContext
 {
     GenericInputStreamContext(uint32_t maxRgbaBufferSize)
@@ -586,14 +591,18 @@ int main(int argc, char** argv)
             const auto minMatchCount = 25;
             float matrixL[3][3];
             const auto isLeftHomoValid = inastitch::opencv::HomographyMatrix::find(
-                "inastitch_in0.jpg", "inastitch_in1.jpg",
-                true, minMatchCount, matrixL
+                inStreamContext0->rgbaBuffer, inStreamWidth, inStreamHeight,
+                inStreamContext1->rgbaBuffer, inStreamWidth, inStreamHeight,
+                true /* isFlipped */, minMatchCount,
+                matrixL
             );
 
             float matrixR[3][3];
             const auto isRightHomoValid = inastitch::opencv::HomographyMatrix::find(
-                "inastitch_in0.jpg", "inastitch_in2.jpg",
-                false, minMatchCount, matrixR
+                inStreamContext0->rgbaBuffer, inStreamWidth, inStreamHeight,
+                inStreamContext2->rgbaBuffer, inStreamWidth, inStreamHeight,
+                false /* isFlipped */, minMatchCount,
+                matrixR
             );
 
             for(uint32_t rowIdx=0; rowIdx<3; rowIdx++)
