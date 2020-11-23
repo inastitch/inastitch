@@ -28,7 +28,7 @@ public:
         uint32_t centerRgbaBufferWidth, uint32_t centerRgbaBufferHeight,
         unsigned char * const rightRgbaBuffer,
         uint32_t rightRgbaBufferWidth, uint32_t rightRgbaBufferHeight,
-        bool isFlipped, uint32_t minMatchCount,
+        bool isFlipped, uint32_t minMatchCount, bool isDebugImageDumped,
         float matrix[3][3]
 #ifdef HAVE_OPENCV
     );

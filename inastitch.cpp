@@ -214,6 +214,7 @@ int main(int argc, char** argv)
     uint16_t inTpoolSize;
     uint16_t windowWidth, windowHeight;
     std::string outFilename;
+    uint16_t fpsLimit;
     uint64_t maxDumpFrameCount;
     std::string frameDumpPath;
     uint64_t frameDumpOffsetId;
@@ -266,6 +267,9 @@ int main(int argc, char** argv)
              "OpenGL rendering and output stream HEIGHT")
             ("out-file", po::value<std::string>(&outFilename),
              "Write output MJPEG to FILENAME")
+
+            ("fps-limit", po::value<uint16_t>(&fpsLimit)->default_value(0),
+             "Limit rendering speed to FPS")
 
             ("max-dump-frame", po::value<uint64_t>(&maxDumpFrameCount)->default_value(std::numeric_limits<uint64_t>::max()),
              "Maximum frame count")
@@ -463,6 +467,7 @@ int main(int argc, char** argv)
     // prepare output file
     auto outJpegFile = std::ofstream(outFilename, std::ios::binary);
     auto outPtsFile = std::ofstream(outFilename + ".pts");
+    auto outDelayFile = std::ofstream(outFilename + ".delay.txt");
 
     bool isFirstFrame = true;
     uint64_t frameCount = 0;
@@ -471,6 +476,7 @@ int main(int argc, char** argv)
     uint64_t frameDumpCount = 0;
     std::cout << "DumpTimeOffset: " << frameDumpOffsetTime << std::endl;
 
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     const auto renderTimeStart = std::chrono::high_resolution_clock::now();
 
     // This is the rendering loop
@@ -527,8 +533,6 @@ int main(int argc, char** argv)
                                    (frameAbsTime >= frameDumpOffsetTime);
         const auto frameDumpIdx = isDumpFrameIdRelativeToOffset ? frameDumpCount: frameCount;
 
-
-
         boost::asio::thread_pool threadPoolInDecode(inTpoolSize);
         boost::asio::post(threadPoolInDecode,
             [&]()
@@ -584,16 +588,16 @@ int main(int argc, char** argv)
         {
             std::cout << "Start calibration..." << std::endl;
 
-            inStreamContext0->dumpJpegAndPts("inastitch_in0.jpg");
-            inStreamContext1->dumpJpegAndPts("inastitch_in1.jpg");
-            inStreamContext2->dumpJpegAndPts("inastitch_in2.jpg");
+            //inStreamContext0->dumpJpegAndPts("inastitch_in0.jpg");
+            //inStreamContext1->dumpJpegAndPts("inastitch_in1.jpg");
+            //inStreamContext2->dumpJpegAndPts("inastitch_in2.jpg");
 
             const auto minMatchCount = 25;
             float matrixL[3][3];
             const auto isLeftHomoValid = inastitch::opencv::HomographyMatrix::find(
                 inStreamContext0->rgbaBuffer, inStreamWidth, inStreamHeight,
                 inStreamContext1->rgbaBuffer, inStreamWidth, inStreamHeight,
-                true /* isFlipped */, minMatchCount,
+                true /* isFlipped */, minMatchCount, false /* isDebugImageDumped */,
                 matrixL
             );
 
@@ -601,7 +605,7 @@ int main(int argc, char** argv)
             const auto isRightHomoValid = inastitch::opencv::HomographyMatrix::find(
                 inStreamContext0->rgbaBuffer, inStreamWidth, inStreamHeight,
                 inStreamContext2->rgbaBuffer, inStreamWidth, inStreamHeight,
-                false /* isFlipped */, minMatchCount,
+                false /* isFlipped */, minMatchCount, false /* isDebugImageDumped */,
                 matrixR
             );
 
@@ -806,6 +810,10 @@ int main(int argc, char** argv)
                   << ", t1(" << bufferIdx1 << "):" << inStreamContext1->timeDelay
                   << ", t2(" << bufferIdx2 << "):" << inStreamContext2->timeDelay << std::endl;
 
+
+        const auto maxDelay = std::max(std::max(inStreamContext0->timeDelay, inStreamContext1->timeDelay), inStreamContext2->timeDelay);
+        outDelayFile << frameCount << " " << frameRelTime << " " << maxDelay << " " << std::endl;
+
         if(isStatsEnabled)
         std::cout << "inParse:" << std::chrono::duration_cast<std::chrono::microseconds>(frameT2-frameT1).count() << "us"
                   << ", inDump: " << std::chrono::duration_cast<std::chrono::microseconds>(frameT3-frameT2).count() << "us"
@@ -817,6 +825,22 @@ int main(int argc, char** argv)
                   << ", outDump:" << std::chrono::duration_cast<std::chrono::microseconds>(frameT9-frameT8).count() << "us"
                   << ", total:" << std::chrono::duration_cast<std::chrono::microseconds>(frameT10-frameT1).count() << "us"
                   << std::endl;
+
+        // framerate limiter
+        if(fpsLimit > 0)
+        {
+            const auto frameT99 = std::chrono::high_resolution_clock::now();
+            const auto frameTimeUs = std::chrono::duration_cast<std::chrono::microseconds>(frameT99-frameT1).count();
+
+            // Calculate frameTime in microseconds
+            // E.g., 30fps = 33,333µs
+            const uint32_t frameTimeWishUs = 1000000 / fpsLimit;
+            if(frameTimeUs < frameTimeWishUs)
+            {
+                const auto waitTimeUs = frameTimeWishUs - frameTimeUs;
+                std::this_thread::sleep_for(std::chrono::microseconds(waitTimeUs));
+            }
+        }
     }
 
     const auto renderTimeEnd = std::chrono::high_resolution_clock::now();

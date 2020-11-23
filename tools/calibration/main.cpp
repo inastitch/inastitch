@@ -101,6 +101,7 @@ int main(int argc, char** argv)
         rightImageRgba.data, rightImage.size().width, rightImage.size().height,
         isFlipped,
         0,
+        true, /* isDebugImageDumped */
         homographyMatrix
     );
 

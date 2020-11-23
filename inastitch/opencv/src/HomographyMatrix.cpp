@@ -23,7 +23,7 @@ bool inastitch::opencv::HomographyMatrix::find(
     uint32_t centerRgbaBufferWidth, uint32_t centerRgbaBufferHeight,
     unsigned char * const rightRgbaBuffer,
     uint32_t rightRgbaBufferWidth, uint32_t rightRgbaBufferHeight,
-    bool isFlipped, uint32_t minMatchCount,
+    bool isFlipped, uint32_t minMatchCount, bool isDebugImageDumped,
     float matrix[3][3]
 )
 {
@@ -33,7 +33,7 @@ bool inastitch::opencv::HomographyMatrix::find(
         // OpenCV Mat assumes BGRA format
         cv::Mat image = cv::Mat(cv::Size(centerRgbaBufferWidth, centerRgbaBufferHeight),
                                 CV_8UC4, centerRgbaBuffer, cv::Mat::AUTO_STEP);
-        cv::cvtColor(image, centerImage, cv::COLOR_RGBA2BGRA);
+        cv::cvtColor(image, centerImage, cv::COLOR_RGBA2BGR);
     }
 
     cv::Mat rightImage;
@@ -41,7 +41,7 @@ bool inastitch::opencv::HomographyMatrix::find(
         // OpenCV Mat assumes BGRA format
         cv::Mat image = cv::Mat(cv::Size(rightRgbaBufferWidth, rightRgbaBufferHeight),
                                 CV_8UC4, rightRgbaBuffer, cv::Mat::AUTO_STEP);
-        cv::cvtColor(image, rightImage, cv::COLOR_RGBA2BGRA);
+        cv::cvtColor(image, rightImage, cv::COLOR_RGBA2BGR);
     }
 
     if(isFlipped) {
@@ -51,7 +51,7 @@ bool inastitch::opencv::HomographyMatrix::find(
 
     // Part1: detect keypoints and extract
     // Detect and describe features
-    std::function detectAndDescribe = [](const cv::Mat &image, const char *imgDesc)
+    std::function detectAndDescribe = [isDebugImageDumped](const cv::Mat &image, const char *imgDesc)
     {
         // convert the image to grayscale
         cv::Mat grayImage;
@@ -71,11 +71,11 @@ bool inastitch::opencv::HomographyMatrix::find(
                   << std::chrono::duration_cast<std::chrono::microseconds>(t2-t1).count() << "us"
                   << std::endl;
 
-        // TODO: make this DLT
+        if(isDebugImageDumped)
         {
             cv::Mat kpsImage;
             cv::drawKeypoints(image, keypoints, kpsImage);
-            cv::imwrite(std::string("/tmp/inastitch_kps") + imgDesc + ".jpg", kpsImage);
+            cv::imwrite(std::string("inastitch_kps") + imgDesc + ".jpg", kpsImage);
         }
 
         return std::make_tuple(keypoints, features);
@@ -118,12 +118,12 @@ bool inastitch::opencv::HomographyMatrix::find(
             }
         }
 
-        // TODO: make this DLT
+        if(isDebugImageDumped)
         {
             // draw matches
             cv::Mat matchesImage;
             cv::drawMatches(rightImage, kpsR, centerImage, kpsC, matches, matchesImage);
-            cv::imwrite("/tmp/inastitch_matches.jpg", matchesImage);
+            cv::imwrite("inastitch_matches.jpg", matchesImage);
         }
 
         return matches;
@@ -191,6 +191,7 @@ bool inastitch::opencv::HomographyMatrix::find(
     std::cout << "Inverted OpenCV homography matrix:" << std::endl;
     std::cout << homoMatrixRInv << std::endl;
 
+    if(isDebugImageDumped)
     {
         cv::Mat panoR;
         cv::warpPerspective(
@@ -216,9 +217,9 @@ bool inastitch::opencv::HomographyMatrix::find(
     }
 
     // normalize matrix for OpenGL
-    // Note: currently the matrix expects coordinates in pixel.
+    // Note: currently the matrix expects coordinates in pixel [0, imageWidth] and [0, imageHeight].
     //       If using this matrix in an OpenGL shader, coordinates will be
-    //       in the range of (-1.0, 1.0), instead of pixels.
+    //       in the range of [-1.0, 1.0], instead of pixels.
 
     float xFlipAndShiftMatrix_data[] = {
          -1.0, 0.0, 1.0,
