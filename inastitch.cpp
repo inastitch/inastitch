@@ -56,6 +56,7 @@ namespace po = boost::program_options;
 #include <chrono>
 #include <thread>
 #include <fstream>
+#include <sstream>
 
 // Note: the vertex shader describes how vertices (i.e., the 3 coords of a triangle)
 //       are transformed.
@@ -469,6 +470,11 @@ int main(int argc, char** argv)
     auto outPtsFile = std::ofstream(outFilename + ".pts");
     auto outDelayFile = std::ofstream(outFilename + ".delay.txt");
 
+    // add PTS header
+    // See this link for different format available:
+    // https://mkvtoolnix.download/doc/mkvmerge.html#mkvmerge.external_timestamp_files
+    outPtsFile << "# timecode format v2" << std::endl;
+
     bool isFirstFrame = true;
     uint64_t frameCount = 0;
     uint64_t frameRelTime = 0;
@@ -493,13 +499,20 @@ int main(int argc, char** argv)
         inStreamContext2->getFrame(bufferIdx2);
 
         uint64_t frameAbsTime = 0;
-        for(uint32_t skipCount=0; skipCount < maxFrameSkip; skipCount++)
+        auto updateDelay = [&]()
         {
             // min of 3 input frame timestamps
-            frameAbsTime = std::max(inStreamContext0->absTime, std::max(inStreamContext1->absTime, inStreamContext2->absTime));
+            frameAbsTime = std::max(inStreamContext0->absTime,
+                                    std::max(inStreamContext1->absTime, inStreamContext2->absTime));
             inStreamContext0->timeDelay = frameAbsTime - inStreamContext0->absTime;
             inStreamContext1->timeDelay = frameAbsTime - inStreamContext1->absTime;
             inStreamContext2->timeDelay = frameAbsTime - inStreamContext2->absTime;
+        };
+        updateDelay();
+
+        for(uint32_t skipCount=0; skipCount < maxFrameSkip; skipCount++)
+        {
+            updateDelay();
 
             const bool isFrame0Delayed = inStreamContext0->timeDelay > maxDelay;
             const bool isFrame1Delayed = inStreamContext1->timeDelay > maxDelay;
@@ -723,6 +736,7 @@ int main(int argc, char** argv)
         const auto frameT6 = std::chrono::high_resolution_clock::now();
         // render overlay time
 
+        std::string frameRelTimeMsStr;
         std::chrono::high_resolution_clock::time_point frameT7, frameT8;
         {
             // TODO: such a big buffer on stack is not a good idea
@@ -758,7 +772,13 @@ int main(int argc, char** argv)
             frameT8 = std::chrono::high_resolution_clock::now();
             // read back pixel time
 
-#if 0
+            {
+                std::ostringstream ss;
+                ss << std::fixed << std::setprecision(3) << ( static_cast<float>(frameRelTime)/1000 );
+                frameRelTimeMsStr = ss.str();
+            }
+
+#if 1
             if(isFrameDumped )
             {
                 boost::asio::post(threadPoolOutStream,
@@ -766,17 +786,13 @@ int main(int argc, char** argv)
                    {
                         auto [ jpegData, jpegSize ] = rtpJpegEncoder.encode(framebuffer, windowWidth, windowHeight);
 
-                        const std::string ptsStr = std::to_string(frameAbsTime) + " "
-                                                   + std::to_string(frameRelTime) + " "
-                                                   + std::to_string(frameDiffTime);
-
                         if(!outFilename.empty())
                         {
                             // append to output MJPEG
                             outJpegFile.write((char*)&jpegData[0], jpegSize);
 
                             // append to output PTS
-                            outPtsFile << ptsStr << std::endl;
+                            outPtsFile << frameRelTimeMsStr << std::endl;
                         }
 
                         if(!frameDumpPath.empty())
@@ -786,7 +802,7 @@ int main(int argc, char** argv)
                             jpegFile.close();
 
                             auto ptsFile = std::fstream(frameDumpPath + std::to_string(frameDumpIdx) + "out.jpg" + ".pts", std::ios::out);
-                            ptsFile << ptsStr;
+                            ptsFile << frameRelTimeMsStr;
                             ptsFile.close();
                         }
                     }
@@ -806,13 +822,14 @@ int main(int argc, char** argv)
         
         const auto frameT10 = std::chrono::high_resolution_clock::now();
         std::cout << "[" << frameCount << "," << frameDumpCount
-                  << "] t0(" << bufferIdx0 << "):" << inStreamContext0->timeDelay
+                  << "] " << frameRelTimeMsStr
+                  << " t0(" << bufferIdx0 << "):" << inStreamContext0->timeDelay
                   << ", t1(" << bufferIdx1 << "):" << inStreamContext1->timeDelay
                   << ", t2(" << bufferIdx2 << "):" << inStreamContext2->timeDelay << std::endl;
 
 
         const auto maxDelay = std::max(std::max(inStreamContext0->timeDelay, inStreamContext1->timeDelay), inStreamContext2->timeDelay);
-        outDelayFile << frameCount << " " << frameRelTime << " " << maxDelay << " " << std::endl;
+        outDelayFile << frameCount << " " << frameRelTime << " " << frameDiffTime << " " << maxDelay << " " << std::endl;
 
         if(isStatsEnabled)
         std::cout << "inParse:" << std::chrono::duration_cast<std::chrono::microseconds>(frameT2-frameT1).count() << "us"

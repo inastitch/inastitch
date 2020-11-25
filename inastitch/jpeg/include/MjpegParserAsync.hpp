@@ -30,7 +30,7 @@ private:
     void nextFrame();
 
 public:
-    static const uint32_t jpegBufferCount = 10;
+    static const uint32_t jpegBufferCount = 100;
 
 private:
     uint32_t m_maxJpegBufferSize;
