@@ -354,9 +354,24 @@ int main(int argc, char** argv)
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
         glWindow = glfwCreateWindow(windowWidth, windowHeight, __FILE__, NULL, NULL);
         glfwMakeContextCurrent(glWindow);
+        
+        const auto glVersion  = glGetString(GL_VERSION);
+        const auto glRenderer = glGetString(GL_RENDERER);
 
-        printf("GL_VERSION  : %s\n", glGetString(GL_VERSION) );
-        printf("GL_RENDERER : %s\n", glGetString(GL_RENDERER) );
+        std::cout << "GL_VERSION  : " << glVersion << std::endl;
+        std::cout << "GL_RENDERER : " << glRenderer << std::endl;
+        
+        if( (glVersion == nullptr) || (glRenderer == nullptr) )
+        {
+            std::cerr << "No OpenGL" << std::endl
+                      << "Note 1: if you run this command in a SSH terminal, you can specify "
+                      << "the display with DISPLAY=:0 for example." << std::endl
+                      << "Note 2: if you run this command on a headless system (i.e., no screen attached), "
+                      << "hardware acceleration might not be possible. "
+                      << "As a workaround, use LIBGL_ALWAYS_SOFTWARE=1 to force software rendering." << std::endl
+                      << "Aborting..." << std::endl;
+            std::abort();
+        }
 
         glShaderProgram = inastitch::opengl::helper::getShaderProgram(vertexShaderSource, fragmentShaderSource);
         GL_CHECK( glShaderPositionAttrib = glGetAttribLocation(glShaderProgram, "position") );
