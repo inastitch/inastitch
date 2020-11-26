@@ -46,6 +46,11 @@ execute_process(COMMAND
 configure_file("${CMAKE_SOURCE_DIR}/cmake/version.cpp.in" "${CMAKE_BINARY_DIR}/version.cpp" @ONLY)
 list(APPEND SOURCES "${CMAKE_BINARY_DIR}/version.cpp" include/version.h)
 
+set(BOOST_INSTALL "/home/pi/boost/local")
+include_directories("${BOOST_INSTALL}/include/")
+#find_library(BOOST_PROG_OPTS_STATIC_LIB libboost_program_options.a)
+set(BOOST_PROG_OPTS_STATIC_LIB "${BOOST_INSTALL}/lib/libboost_program_options.a")
+
 ###
 if(NO_INARTPSEND)
     message(STATUS "Skip inartpsend")
@@ -65,12 +70,12 @@ else()
         ${CMAKE_CURRENT_BINARY_DIR}/version.cpp
     )
 
-    find_library(BOOST_PROG_OPTS_STATIC_LIB libboost_program_options.a)
+    set(BOOST_PROG_OPTS_STATIC_LIB "${BOOST_INSTALL}/lib/libboost_program_options.a")
 
     target_link_libraries(inartpsend
         # Boost
-        -lboost_program_options
-        #${BOOST_PROG_OPTS_STATIC_LIB}
+        #-lboost_program_options
+        ${BOOST_PROG_OPTS_STATIC_LIB}
 
         -lrt -lz -pthread
     )
@@ -124,12 +129,11 @@ else()
         ${CMAKE_BINARY_DIR}/version.cpp
     )
 
-    find_library(BOOST_PROG_OPTS_STATIC_LIB libboost_program_options.a)
     find_library(TURBO_JPEG_STATIC_LIB libturbojpeg.a)
 
     target_link_libraries(inastitch
-        -lboost_program_options
-        #${BOOST_PROG_OPTS_STATIC_LIB}
+        #-lboost_program_options
+        ${BOOST_PROG_OPTS_STATIC_LIB}
 
         # OpenCV static libraries
         # Note: multiples times because of dependencies
