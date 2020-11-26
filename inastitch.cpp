@@ -40,12 +40,12 @@ namespace po = boost::program_options;
 
 // Glfw includes:
 // Use OpenGL ES 2.x
-//#define GLFW_INCLUDE_ES2
+#define GLFW_INCLUDE_ES2
 // Use OpenGL ES 3.x
-#define GLFW_INCLUDE_ES3
+//#define GLFW_INCLUDE_ES3
 #include <GLFW/glfw3.h>
 
-#define USE_OPENGL_PBO 1
+#define USE_OPENGL_PBO 0
 // Note: Enabling PBO requires OpenGL ES 3.0
 // See "#define GLFW_INCLUDE_ES3"
 
@@ -95,10 +95,10 @@ void main() {
 )"""";
 
 // Rectangle for the image texture
-static const GLfloat topRightX    = -0.320f, topRightY    =  0.240f;
-static const GLfloat bottomRightX = -0.320f, bottomRightY = -0.240f;
-static const GLfloat bottomLeftX  =  0.320f, bottomLeftY  = -0.240f;
-static const GLfloat topLeftX     =  0.320f, topLeftY     =  0.240f;
+static const GLfloat topRightX    = -0.480f, topRightY    =  0.360f;
+static const GLfloat bottomRightX = -0.480f, bottomRightY = -0.360f;
+static const GLfloat bottomLeftX  =  0.480f, bottomLeftY  = -0.360f;
+static const GLfloat topLeftX     =  0.480f, topLeftY     =  0.360f;
 static const GLfloat vertices[] = {
     // position (2D)            // texCoord
     topRightX,    topRightY,    0.0f, 0.0f,
@@ -164,7 +164,7 @@ struct GenericInputStreamContext
     unsigned char *jpegBuffer = nullptr;
     unsigned char *rgbaBuffer = nullptr;
     const uint32_t rgbaBufferSize;
-    uint32_t jpegBufferSize;
+    uint32_t jpegBufferSize = 0;
 
     // absolute time since epoch (in us)
     uint64_t absTime = 0;
@@ -238,8 +238,8 @@ int main(int argc, char** argv)
     {
         po::options_description desc("Allowed options");
         desc.add_options()
-            ("in-matrix", po::value<std::string>(&inMatrixJsonFilename),
-             "Read matrix from JSON FILENAME")
+//            ("in-matrix", po::value<std::string>(&inMatrixJsonFilename),
+//             "Read matrix from JSON FILENAME")
 
             ("in-file0", po::value<std::string>(&inFilename0),
              "Read MJPEG from FILENAME for central texture (0)")
@@ -248,11 +248,11 @@ int main(int argc, char** argv)
             ("in-file2", po::value<std::string>(&inFilename2),
              "Read MJPEG from FILENAME for right texture (2)")
 
-            ("in-port0", po::value<std::string>(&inSocketPort0),
+            ("in-port0", po::value<std::string>(&inSocketPort0)->default_value("5000"),
              "Listen for RTP/JPEG on PORT for central texture (0)")
-            ("in-port1", po::value<std::string>(&inSocketPort1),
+            ("in-port1", po::value<std::string>(&inSocketPort1)->default_value("5001"),
              "Listen for RTP/JPEG on PORT for left texture (1)")
-            ("in-port2", po::value<std::string>(&inSocketPort2),
+            ("in-port2", po::value<std::string>(&inSocketPort2)->default_value("5002"),
              "Listen for RTP/JPEG on PORT for right texture (2)")
 
             ("in-width", po::value<uint16_t>(&inStreamWidth)->default_value(640),
@@ -350,7 +350,7 @@ int main(int argc, char** argv)
     {
         glfwInit();
         glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
         glWindow = glfwCreateWindow(windowWidth, windowHeight, __FILE__, NULL, NULL);
         glfwMakeContextCurrent(glWindow);
@@ -417,9 +417,19 @@ int main(int argc, char** argv)
 #endif
 
     const glm::mat4 identMat4 = glm::mat4(1.0f);
-    const glm::mat4 initialViewMat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -2.0f));
+    // Model
     glm::mat4 modelMat[3] = {identMat4, identMat4, identMat4};
+    
+    // View
+    const glm::mat4 initialViewMat = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -0.865f));
     glm::mat4 viewMat[3] =  {initialViewMat, initialViewMat, initialViewMat};
+    // glm matrice element access: matrix[colIdx][rowIdx] = value
+    // shift left
+    viewMat[1][3][0] = -0.955f;
+    // shift right
+    viewMat[2][3][0] = 0.955f;
+    
+    // Proojection
     glm::mat4 projMat = glm::perspective(glm::radians(45.0f), static_cast<float>(windowWidth)/windowHeight, 0.1f, 100.0f);
 
     const glm::mat3 identMat3 = glm::mat3(1.0f);
@@ -430,6 +440,8 @@ int main(int argc, char** argv)
     // Note: JPEG data should be smaller than raw RGB data
 
     // read matrix settings from JSON file
+#if 0
+    if(!inMatrixJsonFilename.empty())
     {
         const tao::json::value json = tao::json::from_file(inMatrixJsonFilename);
 
@@ -446,6 +458,7 @@ int main(int argc, char** argv)
         GlmJson::jsonToGlmMat4(json.at("texture2").as<std::vector<float>>("view"), viewMat[2]);
         GlmJson::jsonToGlmMat3(json.at("texture2").as<std::vector<float>>("warp"), texWarpMat[2]);
     }
+#endif
 
     const auto inStreamMaxRgbBufferSize = inStreamWidth * inStreamHeight * 4; // RGBA format
 
@@ -607,20 +620,29 @@ int main(int argc, char** argv)
 
             const auto minMatchCount = 25;
             float matrixL[3][3];
-            const auto isLeftHomoValid = inastitch::opencv::HomographyMatrix::find(
-                inStreamContext0->rgbaBuffer, inStreamWidth, inStreamHeight,
-                inStreamContext1->rgbaBuffer, inStreamWidth, inStreamHeight,
-                true /* isFlipped */, minMatchCount, false /* isDebugImageDumped */,
-                matrixL
-            );
+            bool isLeftHomoValid = false;
+            if((inStreamContext0->jpegBufferSize != 0) && (inStreamContext1->jpegBufferSize != 0))
+            {
+                isLeftHomoValid = inastitch::opencv::HomographyMatrix::find(
+                    inStreamContext0->rgbaBuffer, inStreamWidth, inStreamHeight,
+                    inStreamContext1->rgbaBuffer, inStreamWidth, inStreamHeight,
+                    true /* isFlipped */, minMatchCount, false /* isDebugImageDumped */,
+                    matrixL
+                );
+                if(isLeftHomoValid) modelMat[1][0][0] = -1.0f;
+            }
 
             float matrixR[3][3];
-            const auto isRightHomoValid = inastitch::opencv::HomographyMatrix::find(
-                inStreamContext0->rgbaBuffer, inStreamWidth, inStreamHeight,
-                inStreamContext2->rgbaBuffer, inStreamWidth, inStreamHeight,
-                false /* isFlipped */, minMatchCount, false /* isDebugImageDumped */,
-                matrixR
-            );
+            bool isRightHomoValid = false;
+            if((inStreamContext0->jpegBufferSize != 0) && (inStreamContext2->jpegBufferSize != 0))
+            {
+                isRightHomoValid = inastitch::opencv::HomographyMatrix::find(
+                    inStreamContext0->rgbaBuffer, inStreamWidth, inStreamHeight,
+                    inStreamContext2->rgbaBuffer, inStreamWidth, inStreamHeight,
+                    false /* isFlipped */, minMatchCount, false /* isDebugImageDumped */,
+                    matrixR
+                );
+            }
 
             for(uint32_t rowIdx=0; rowIdx<3; rowIdx++)
             {

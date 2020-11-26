@@ -130,8 +130,10 @@ else()
     )
 
     find_library(TURBO_JPEG_STATIC_LIB libturbojpeg.a)
+    find_library(PNG_STATIC_LIB libpng.a)
 
     target_link_libraries(inastitch
+        # Boost
         #-lboost_program_options
         ${BOOST_PROG_OPTS_STATIC_LIB}
 
@@ -145,6 +147,9 @@ else()
 
         #-lturbojpeg
         ${TURBO_JPEG_STATIC_LIB}
+
+        #-lpng
+        ${PNG_STATIC_LIB}
 
         -lGLESv2 -lglfw
         -pthread
