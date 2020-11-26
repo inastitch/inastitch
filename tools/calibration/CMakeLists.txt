@@ -27,15 +27,15 @@ add_executable(inastitch_cal
     ${CMAKE_BINARY_DIR}/version.cpp
 )
 
-find_library(BOOST_PROG_OPTS_STATIC_LIB libboost_program_options.a)
 find_library(TURBO_JPEG_STATIC_LIB libturbojpeg.a)
 find_library(PNG_STATIC_LIB libpng.a)
 
 # Reminder: static dependencies need to be linked *after*.
 #           For example, JPEG is after OpenCV.
 target_link_libraries(inastitch_cal
-    -lboost_program_options
-    #${BOOST_PROG_OPTS_STATIC_LIB}
+    # Boost
+    #-lboost_program_options
+    ${BOOST_PROG_OPTS_STATIC_LIB}
 
     # OpenCV static libraries
     # Note: multiples times because of dependencies

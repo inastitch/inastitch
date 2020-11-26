@@ -46,10 +46,12 @@ execute_process(COMMAND
 configure_file("${CMAKE_SOURCE_DIR}/cmake/version.cpp.in" "${CMAKE_BINARY_DIR}/version.cpp" @ONLY)
 list(APPEND SOURCES "${CMAKE_BINARY_DIR}/version.cpp" include/version.h)
 
-set(BOOST_INSTALL "/home/pi/boost/local")
-include_directories("${BOOST_INSTALL}/include/")
-#find_library(BOOST_PROG_OPTS_STATIC_LIB libboost_program_options.a)
-set(BOOST_PROG_OPTS_STATIC_LIB "${BOOST_INSTALL}/lib/libboost_program_options.a")
+if(EXISTS ${BOOST_INSTALL})
+    include_directories("${BOOST_INSTALL}/include/")
+    set(BOOST_PROG_OPTS_STATIC_LIB "${BOOST_INSTALL}/lib/libboost_program_options.a")
+else()
+    find_library(BOOST_PROG_OPTS_STATIC_LIB libboost_program_options.a)
+endif()
 
 ###
 if(NO_INARTPSEND)
@@ -69,8 +71,6 @@ else()
         inartpsend.cpp
         ${CMAKE_CURRENT_BINARY_DIR}/version.cpp
     )
-
-    set(BOOST_PROG_OPTS_STATIC_LIB "${BOOST_INSTALL}/lib/libboost_program_options.a")
 
     target_link_libraries(inartpsend
         # Boost
