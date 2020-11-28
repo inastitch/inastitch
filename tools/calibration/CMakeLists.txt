@@ -14,25 +14,27 @@ include_directories("${OPENCV_STATIC_LIB_PATH}/include/opencv4/")
 file(GLOB OCV_STATIC_LIBS ${OPENCV_STATIC_LIB_PATH}/lib/*.a)
 file(GLOB OCV_3RD_PARTY_STATIC_LIBS ${OPENCV_STATIC_LIB_PATH}/lib/opencv4/3rdparty/*.a)
 
-project(inastitch_cal
+find_library(TURBO_JPEG_STATIC_LIB libturbojpeg.a)
+find_library(PNG_STATIC_LIB libpng.a)
+
+###
+
+project(inastitch_cal_simple
     VERSION 0.1
     DESCRIPTION "Inatech stitcher calibration tool"
 #    HOMEPAGE_URL "https://github.com/inastitch/inastitch/tool/calibration"
     LANGUAGES CXX
 )
 
-add_executable(inastitch_cal
+add_executable(inastitch_cal_simple
     ../../inastitch/opencv/src/HomographyMatrix.cpp
-    main.cpp
+    inastitch_cal_simple.cpp
     ${CMAKE_BINARY_DIR}/version.cpp
 )
 
-find_library(TURBO_JPEG_STATIC_LIB libturbojpeg.a)
-find_library(PNG_STATIC_LIB libpng.a)
-
 # Reminder: static dependencies need to be linked *after*.
 #           For example, JPEG is after OpenCV.
-target_link_libraries(inastitch_cal
+target_link_libraries(inastitch_cal_simple
     # Boost
     #-lboost_program_options
     ${BOOST_PROG_OPTS_STATIC_LIB}
@@ -53,6 +55,48 @@ target_link_libraries(inastitch_cal
     -lz -pthread -ldl
 )
 
-install(TARGETS inastitch_cal
+install(TARGETS inastitch_cal_simple
+    RUNTIME DESTINATION "/usr/bin/"
+)
+
+###
+
+project(inastitch_cal_detailed
+    VERSION 0.1
+    DESCRIPTION "Inatech stitcher calibration tool"
+#    HOMEPAGE_URL "https://github.com/inastitch/inastitch/tool/calibration"
+    LANGUAGES CXX
+)
+
+add_executable(inastitch_cal_detailed
+    ../../inastitch/opencv/src/HomographyMatrix.cpp
+    inastitch_cal_detailed.cpp
+    ${CMAKE_BINARY_DIR}/version.cpp
+)
+
+# Reminder: static dependencies need to be linked *after*.
+#           For example, JPEG is after OpenCV.
+target_link_libraries(inastitch_cal_detailed
+    # Boost
+    #-lboost_program_options
+    ${BOOST_PROG_OPTS_STATIC_LIB}
+
+    # OpenCV static libraries
+    # Note: multiples times because of dependencies
+    ${OCV_STATIC_LIBS}
+    ${OCV_STATIC_LIBS}
+    ${OCV_3RD_PARTY_STATIC_LIBS}
+    ${OCV_3RD_PARTY_STATIC_LIBS}
+
+    #-lturbojpeg
+    ${TURBO_JPEG_STATIC_LIB}
+
+    #-lpng
+    ${PNG_STATIC_LIB}
+
+    -lz -pthread -ldl
+)
+
+install(TARGETS inastitch_cal_detailed
     RUNTIME DESTINATION "/usr/bin/"
 )

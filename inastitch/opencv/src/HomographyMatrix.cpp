@@ -130,11 +130,10 @@ bool inastitch::opencv::HomographyMatrix::find(
     };
 
     auto matchesR = loopOverRawMatches(rawMatchesR, ratio);
-
     std::cout << "matchCount=" << matchesR.size() << std::endl;
 
     // Part3: computing a homography matrix
-    std::function computingOfHomographyMatrix = [minMatchCount](
+    std::function computeHomographyMatrix = [minMatchCount](
         const std::vector<cv::DMatch> &matches,
         const std::vector<cv::KeyPoint> &kpsC,
         const std::vector<cv::KeyPoint> &kpsR,
@@ -169,7 +168,7 @@ bool inastitch::opencv::HomographyMatrix::find(
         return homoM;
     };
 
-    auto homoMatrixR = computingOfHomographyMatrix(matchesR, kpsR, kpsC, reprojThresh);
+    auto homoMatrixR = computeHomographyMatrix(matchesR, kpsR, kpsC, reprojThresh);
 
     std::cout << "Original OpenCV homography matrix:" << std::endl;
     std::cout << homoMatrixR << std::endl;
