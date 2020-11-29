@@ -238,11 +238,10 @@ int main(int argc, char** argv)
             cv::Mat_<float> K;
             cameraParams.at(0).K().convertTo(K, CV_32F);
 
-            cv::Mat R = cv::Mat(3, 3, CV_32F);
+            cv::Mat R = cv::Mat::eye(3, 3, CV_32F);
             // No rotation
 
             warpedCropRect = warper->warpRoi(cropSize, K, R);
-            warpedCropRect.x -= (warpedCropRect.width/2);
             std::cout << "WarpedCropRect: " << warpedCropRect << std::endl;
         }
     }
@@ -294,7 +293,7 @@ int main(int argc, char** argv)
                 warpedImages.at(imgIdx).copyTo(pano(
                     cv::Rect(roi.x - offsetX, roi.y - offsetY, roi.width, roi.height)));
             }
-            //cv::imwrite("full_" + outputPath, pano);
+            cv::imwrite("full_" + outputPath, pano);
         }
         // Note: depending on the additional rotation angle, the panoramic result may be very large.
         // Two suggestions:
@@ -320,6 +319,7 @@ int main(int argc, char** argv)
         for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
         {
             cv::Mat rotationVect;
+            // See: "cv::Rodrigues" in https://docs.opencv.org/4.4.0/d9/d0c/group__calib3d.html
             cv::Rodrigues(cameraParams.at(imgIdx).R, rotationVect);
 
             // transform to degree
