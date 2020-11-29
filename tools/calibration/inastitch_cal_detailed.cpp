@@ -38,16 +38,28 @@ namespace po = boost::program_options;
 #include <iostream>
 #include <fstream>
 #include <chrono>
+#include <limits>
 
 /// @brief Standalone calibration tool
 ///
-/// Take two input images (center and right) and generate the homography matrix for the right image
-/// to stitch on the center image. The result can be rotated by a given angle.
+/// Take a set of images and generate the camera (K) and rotation (R) matrices for each images.
+/// Combined, the K and the R matrices make a homography matrix (H), like
+/// @code inastitch_cal_simple. Having the homography matrix split up into K and R is more
+/// convenient because it allows to change the rotation matrix before stitching, hence the
+/// possibility to rotate the result by a given angle.
+///
+/// @note The first image will have no rotation, i.e., the R matrix will be an identity matrix.
+/// Other R matrices are rotations relative to the first image.
 int main(int argc, char** argv)
 {
-    std::string centerImagePath, rightImagePath;
+    std::vector<std::string> inputImagePaths;
 	float ratio, reprojThresh;
     float rotationAngle;
+
+    uint16_t cropWidth;
+    uint16_t cropHeight;
+
+    std::string outputPath;
 
     std::cout << "Calibration tool "
               << inastitch::version::GIT_COMMIT_TAG
@@ -56,60 +68,87 @@ int main(int argc, char** argv)
 
 	{
         po::options_description desc("Allowed options");
-	    desc.add_options()
-	        ("center,c", po::value<std::string>(&centerImagePath)->default_value("center.jpg"),
-	         "Path to the center image")
-	        ("right,r", po::value<std::string>(&rightImagePath)->default_value("right.jpg"),
-	         "Path to the right image")
-		
+        desc.add_options()
+            ("input-image", po::value<std::vector<std::string>>(&inputImagePaths),
+             "Input images (a list of space-separated image paths)")
+
             ("ratio", po::value<float>(&ratio)->default_value(0.75),
 	         "Ratio")
             ("reproj-thresh", po::value<float>(&reprojThresh)->default_value(4.0),
 	         "Reprojection threshold")
-
             ("angle,a", po::value<float>(&rotationAngle)->default_value(0.0),
              "Rotation angle")
-	    
+
+            ("crop-width", po::value<uint16_t>(&cropWidth)->default_value(640),
+             "Crop width")
+            ("crop-height", po::value<uint16_t>(&cropHeight)->default_value(480),
+             "Crop width")
+
+            ("output,o", po::value<std::string>(&outputPath)->default_value("output.jpg"),
+             "Output path")
+
             ("help,h", "Show this help message")
 	    ;
 	
+        po::positional_options_description p;
+        p.add("input-image", -1);
+
         po::variables_map vm;
-        po::store(po::parse_command_line(argc, argv, desc), vm);
-	    po::notify(vm);
+        po::store(po::command_line_parser(argc, argv).
+                  options(desc).positional(p).run(), vm);
+        po::notify(vm);
 	
 	    if(vm.count("help")) {
 	        std::cout << desc << std::endl;
 	        return 0;
 	    }
+
+        if(!vm.count("input-image")) {
+            std::cout << "No image to process" << std::endl;
+            return 0;
+        }
 	}
 
-    cv::Mat centerImage = cv::imread(centerImagePath);
-    cv::Mat rightImage = cv::imread(rightImagePath);
+    const auto inputImageCount = inputImagePaths.size();
+    std::vector<cv::Mat> inputImages(inputImageCount);
+
+    // Part0: Load input images
+    for(uint32_t pathIdx=0; pathIdx<inputImageCount; pathIdx++)
+    {
+        inputImages.at(pathIdx) = cv::imread(inputImagePaths.at(pathIdx));
+    }
+    std::cout << "Loaded " << inputImages.size() << " images" << std::endl;
 
     // Part1: Find features
-    std::vector<cv::detail::ImageFeatures> features(2);
+    std::vector<cv::detail::ImageFeatures> features(inputImageCount);
     {
         auto finder = cv::SIFT::create();
         // TODO: SIFT might not be the best way to do this
+        //       Add support for other feature detectors (ORB, SURF, AKAZE)
 
-        computeImageFeatures(finder, centerImage, features[0]);
-        computeImageFeatures(finder, rightImage, features[1]);
+        for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
+        {
+            computeImageFeatures(finder, inputImages.at(imgIdx), features.at(imgIdx));
+            std::cout << "Image" << imgIdx << ": found "
+                      << features.at(imgIdx).keypoints.size() << " features" << std::endl;
+        }
     }
-    std::cout << "Found " << features[0].keypoints.size() << " features" << std::endl;
-    std::cout << "Found " << features[1].keypoints.size() << " features" << std::endl;
 
     // Part2: Pairwise matching
-    std::vector<cv::detail::MatchesInfo> pairwiseMatches(2);
+    std::vector<cv::detail::MatchesInfo> pairwiseMatches(inputImageCount);
     {
         auto matcher = cv::detail::BestOf2NearestMatcher(false /* tryCuda */, ratio);
         matcher(features, pairwiseMatches);
         matcher.collectGarbage();
     }
-    std::cout << "Found " << pairwiseMatches[0].matches.size() << " matches" << std::endl;
-    std::cout << "Found " << pairwiseMatches[1].matches.size() << " matches" << std::endl;
+    for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
+    {
+        std::cout << "Image" << imgIdx << ": found "
+                  << pairwiseMatches.at(imgIdx).matches.size() << " matches" << std::endl;
+    }
 
     // Part3: Homography estimation
-    std::vector<cv::detail::CameraParams> cameraParams(2);
+    std::vector<cv::detail::CameraParams> cameraParams(inputImageCount);
     {
         auto estimator = cv::detail::HomographyBasedEstimator();
         const bool isSuccess = estimator(features, pairwiseMatches, cameraParams);
@@ -119,19 +158,22 @@ int main(int argc, char** argv)
             std::cout << "Homography estimation failed" << std::endl;
         }
     }
-    std::cout << "K0 = " << cameraParams[0].K() << std::endl;
-    std::cout << "K1 = " << cameraParams[1].K() << std::endl;
-    std::cout << "R0 = " << cameraParams[0].R << std::endl;
-    std::cout << "R1 = " << cameraParams[1].R << std::endl;
+    for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
+    {
+        std::cout << "Image" << imgIdx << ": K="
+                  << cameraParams.at(imgIdx).K() << std::endl;
+        std::cout << "Image" << imgIdx << ": R="
+                  << cameraParams.at(imgIdx).R << std::endl;
+    }
 
     // Convert R matrices from integer into float
     {
-        cv::Mat_<float> R0, R1;
-        cameraParams[0].R.convertTo(R0, CV_32F);
-        cameraParams[1].R.convertTo(R1, CV_32F);
-
-        cameraParams[0].R = R0;
-        cameraParams[1].R = R1;
+        for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
+        {
+            cv::Mat_<float> Rf;
+            cameraParams.at(imgIdx).R.convertTo(Rf, CV_32F);
+            cameraParams.at(imgIdx).R = Rf;
+        }
     }
 
     // Bundle adjustement
@@ -141,7 +183,7 @@ int main(int argc, char** argv)
         adjuster(features, pairwiseMatches, cameraParams);
     }
 
-    // Rotate
+    // Apply additional rotation
     {
         const auto angleRad = rotationAngle * 3.141592653589793 / 180.0;
         cv::Mat R_y = (cv::Mat_<float>(3,3) <<
@@ -149,52 +191,84 @@ int main(int argc, char** argv)
            0.0,                 1.0, 0.0,
            -std::sin(angleRad), 0.0, std::cos(angleRad)
         );
-        auto R0_rot = R_y * cameraParams[0].R;
-        auto R1_rot = R_y * cameraParams[1].R;
 
-        cameraParams[0].R = R0_rot;
-        cameraParams[1].R = R1_rot;
+        for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
+        {
+            auto R_rot = R_y * cameraParams.at(imgIdx).R;
+            cameraParams.at(imgIdx).R = R_rot;
+        }
     }
 
     // Part4: Warp images
-    std::vector<cv::Mat> warpedImages(2);
-    std::vector<cv::Rect> warpedImageRects(2);
+    std::vector<cv::Mat> warpedImages(inputImageCount);
+    std::vector<cv::Rect> warpedImageRects(inputImageCount);
+    cv::Rect warpedCropRect;
     {
         auto warperCreator = cv::PlaneWarper();
-        auto warper = warperCreator.create(1000.0f);
+        auto warper = warperCreator.create(cameraParams.at(0).focal);
+        // TODO: this assume a similar focal for all pictures
+        // OpenCV sample code calcultates a median focal here.
 
-        // Make float K
-        cv::Mat_<float> K0, K1;
-        cameraParams[0].K().convertTo(K0, CV_32F);
-        cameraParams[1].K().convertTo(K1, CV_32F);
+        for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
+        {
+            // Make float K
+            cv::Mat_<float> Kf;
+            cameraParams.at(imgIdx).K().convertTo(Kf, CV_32F);
 
-        warper->warp(centerImage, K0, cameraParams[0].R,
-                     cv::INTER_LINEAR, cv::BORDER_CONSTANT,
-                     warpedImages[0]);
-        warper->warp(rightImage, K1, cameraParams[1].R,
-                     cv::INTER_LINEAR, cv::BORDER_CONSTANT,
-                     warpedImages[1]);
+            warper->warp(inputImages.at(imgIdx), Kf, cameraParams.at(imgIdx).R,
+                         cv::INTER_LINEAR, cv::BORDER_CONSTANT,
+                         warpedImages.at(imgIdx));
 
-        // warp corners
-        warpedImageRects[0] = warper->warpRoi(centerImage.size(), K0, cameraParams[0].R);
-        warpedImageRects[1] = warper->warpRoi(rightImage.size(), K1, cameraParams[1].R);
+            // warp corners
+            warpedImageRects.at(imgIdx) = warper->warpRoi(
+                inputImages.at(imgIdx).size(), Kf, cameraParams.at(imgIdx).R
+            );
+
+            std::cout << "Image" << imgIdx << ": ROI " << warpedImageRects.at(imgIdx) << std::endl;
+            //cv::imwrite("warped" + std::to_string(imgIdx) + ".jpg", warpedImages.at(imgIdx));
+        }
+
+        {
+            // Warp cropped image corners with no rotation
+            cv::Size cropSize{cropWidth, cropHeight};
+
+            cv::Mat_<float> K;
+            cameraParams.at(0).K().convertTo(K, CV_32F);
+
+            cv::Mat R = cv::Mat(3, 3, CV_32F);
+            // No rotation
+
+            warpedCropRect = warper->warpRoi(cropSize, K, R);
+            warpedCropRect.x -= (warpedCropRect.width/2);
+            std::cout << "WarpedCropRect: " << warpedCropRect << std::endl;
+        }
     }
 
-    std::cout << "roi0: " << warpedImageRects[0] << std::endl;
-    std::cout << "roi1: " << warpedImageRects[1] << std::endl;
-
-    cv::imwrite("inastitch_warped0.jpg", warpedImages[0]);
-    cv::imwrite("inastitch_warped1.jpg", warpedImages[1]);
-
+    // Part5: Make panorama and crop
     {
-        // find min and max pixel coord
-        const auto &roi0 = warpedImageRects[0];
-        const auto &roi1 = warpedImageRects[1];
+        // Find min and max wrapped pixel coordinates
+        int32_t minX = std::numeric_limits<int32_t>::max();
+        int32_t minY = std::numeric_limits<int32_t>::max();
+        int32_t maxX = std::numeric_limits<int32_t>::min();
+        int32_t maxY = std::numeric_limits<int32_t>::min();
+        auto updateMinMax = [&](const cv::Rect &roi)
+        {
+            // min top-left
+            minX = std::min(minX, roi.x);
+            minY = std::min(minY, roi.y);
+            // max bottom-right
+            maxX = std::max(maxX, roi.x + roi.width);
+            maxY = std::max(maxY, roi.y + roi.height);
+        };
 
-        const auto minX = std::min(roi0.x, roi1.x);
-        const auto minY = std::min(roi0.y, roi1.y);
-        const auto maxX = std::max(roi0.x + roi0.width, roi1.x + roi1.width);
-        const auto maxY = std::max(roi0.y + roi0.height, roi1.y + roi1.width);
+        for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
+        {
+            const auto &roi = warpedImageRects.at(imgIdx);
+
+            updateMinMax(roi);
+        }
+        updateMinMax(warpedCropRect);
+
         std::cout << "Min(" << minX << "," << minY << ") "
                   << "Max(" << maxX << "," << maxY << ")" << std::endl;
 
@@ -202,18 +276,39 @@ int main(int argc, char** argv)
         const auto offsetY = minY;
         const auto sizeX = maxX - minX;
         const auto sizeY = maxY - minY;
+        std::cout << "Pano: x=" << offsetX << ",y=" << offsetY << " "
+                  << sizeX << "x" << sizeY << std::endl;
 
         // Build panorama
-        cv::Mat pano(sizeY, sizeX, centerImage.type());
-        pano.setTo(0);
+        cv::Mat pano(sizeY, sizeX, inputImages.at(0).type());
+        {
+            pano.setTo(0);
 
-        warpedImages[1].copyTo(pano(
-            cv::Rect(roi1.x - offsetX, roi1.y - offsetY, roi1.width, roi1.height)));
+            for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
+            {
+                const auto &roi = warpedImageRects.at(imgIdx);
 
-        warpedImages[0].copyTo(pano(
-            cv::Rect(roi0.x - offsetX, roi0.y - offsetY, roi0.width, roi0.height)));
+                warpedImages.at(imgIdx).copyTo(pano(
+                    cv::Rect(roi.x - offsetX, roi.y - offsetY, roi.width, roi.height)));
+            }
+            //cv::imwrite("full_" + outputPath, pano);
+        }
+        // Note: depending on the additional rotation angle, the panoramic result may be very large.
+        // Two suggestions:
+        // - use spherical transformation instead of planar
+        // - if only the cropped result is needed, it is not required to warp all inputs, espcially
+        //   the ones with angles resulting in very strong perspective.
 
-        cv::imwrite("inastitch_pano.jpg", pano);
+        // Crop
+        {
+            auto warpedCropRectWithOffset = warpedCropRect;
+            warpedCropRectWithOffset.x -= offsetX;
+            warpedCropRectWithOffset.y -= offsetY;
+            std::cout << "CropRect: " << warpedCropRectWithOffset << std::endl;
+
+            cv::Mat crop(pano, warpedCropRectWithOffset);
+            cv::imwrite(outputPath, crop);
+        }
     }
     
 	return 0;
