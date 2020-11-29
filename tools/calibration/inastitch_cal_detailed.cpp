@@ -191,6 +191,7 @@ int main(int argc, char** argv)
            0.0,                 1.0, 0.0,
            -std::sin(angleRad), 0.0, std::cos(angleRad)
         );
+        // TODO: replace with cv::getRotationMatrix3D (?)
 
         for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
         {
@@ -205,6 +206,8 @@ int main(int argc, char** argv)
     cv::Rect warpedCropRect;
     {
         auto warperCreator = cv::PlaneWarper();
+        // Note: this warper has a GPU version
+
         auto warper = warperCreator.create(cameraParams.at(0).focal);
         // TODO: this assume a similar focal for all pictures
         // OpenCV sample code calcultates a median focal here.
@@ -308,6 +311,21 @@ int main(int argc, char** argv)
 
             cv::Mat crop(pano, warpedCropRectWithOffset);
             cv::imwrite(outputPath, crop);
+        }
+    }
+
+    // Additional information
+    // Rotation matrix decomposition
+    {
+        for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
+        {
+            cv::Mat rotationVect;
+            cv::Rodrigues(cameraParams.at(imgIdx).R, rotationVect);
+
+            // transform to degree
+            const auto rotationVectDeg = rotationVect * (180.0/3.141592653589793238463);
+
+            std::cout << "Image" << imgIdx << ": RotationVect=" << rotationVectDeg << std::endl;
         }
     }
     
