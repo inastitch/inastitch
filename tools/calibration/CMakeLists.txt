@@ -14,13 +14,18 @@ include_directories("${OPENCV_STATIC_LIB_PATH}/include/opencv4/")
 file(GLOB OCV_STATIC_LIBS ${OPENCV_STATIC_LIB_PATH}/lib/*.a)
 file(GLOB OCV_3RD_PARTY_STATIC_LIBS ${OPENCV_STATIC_LIB_PATH}/lib/opencv4/3rdparty/*.a)
 
-set(DLIB_INSTALL "/home/pi/dlib/local")
-include_directories("${DLIB_INSTALL}/include/")
-file(GLOB DLIB_STATIC_LIB_PATH "${DLIB_INSTALL}/lib/libdlib.a")
-
 find_library(TURBO_JPEG_STATIC_LIB libturbojpeg.a)
 find_library(PNG_STATIC_LIB libpng.a)
 
+###
+
+## Does not seem to work
+#set(DLIB_INSTALL "/home/pi/dlib/local")
+#include_directories("${DLIB_INSTALL}/include/")
+#file(GLOB DLIB_STATIC_LIB_PATH "${DLIB_INSTALL}/lib/libdlib.a")
+
+set(USE_AVX_INSTRUCTIONS ON)
+add_subdirectory(/home/pi/dlib/dlib-19.21/dlib dlib_build)
 ###
 
 project(inastitch_cal_simple
@@ -93,7 +98,8 @@ target_link_libraries(inastitch_cal_detailed
     ${OCV_3RD_PARTY_STATIC_LIBS}
 
     # Dlib
-    ${DLIB_STATIC_LIB_PATH}
+    #${DLIB_STATIC_LIB_PATH}
+    dlib::dlib
 
     #-lturbojpeg
     ${TURBO_JPEG_STATIC_LIB}

@@ -56,6 +56,8 @@ namespace po = boost::program_options;
 /// Other R matrices are rotations relative to the first image.
 int main(int argc, char** argv)
 {
+    std::string matrixJsonPath;
+    bool isNewMatrixJson = false;
     std::vector<std::string> inputImagePaths;
 	float ratio, reprojThresh;
     float rotationAngleDeg = 0.0;
@@ -76,6 +78,10 @@ int main(int argc, char** argv)
 	{
         po::options_description desc("Allowed options");
         desc.add_options()
+            ("matrix-json", po::value<std::string>(&matrixJsonPath)->default_value("matrix.json"),
+             "Matrix JSON")
+            ("new-json", "Save new matrix JSON file")
+
             ("input-image", po::value<std::vector<std::string>>(&inputImagePaths),
              "Input images (a list of space-separated image paths)")
             ("angle,a", po::value<float>(&rotationAngleDeg),
@@ -117,6 +123,10 @@ int main(int argc, char** argv)
             return 0;
         }
 
+        if(vm.count("new-json")) {
+            isNewMatrixJson = true;
+        }
+
         if(vm.count("angle")) {
             isAngleOverwritten = true;
         }
@@ -132,69 +142,139 @@ int main(int argc, char** argv)
     }
     std::cout << "Loaded " << inputImages.size() << " images" << std::endl;
 
-    // Part1: Find image features
-    std::vector<cv::detail::ImageFeatures> features(inputImageCount);
+    if(isNewMatrixJson)
     {
-        auto finder = cv::SIFT::create();
-        // TODO: SIFT might not be the best way to do this
-        //       Add support for other feature detectors (ORB, SURF, AKAZE)
+        // Part1: Find image features
+        std::vector<cv::detail::ImageFeatures> features(inputImageCount);
+        {
+            auto finder = cv::SIFT::create();
+            // TODO: SIFT might not be the best way to do this
+            //       Add support for other feature detectors (ORB, SURF, AKAZE)
 
+            for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
+            {
+                computeImageFeatures(finder, inputImages.at(imgIdx), features.at(imgIdx));
+                std::cout << "Image" << imgIdx << ": found "
+                          << features.at(imgIdx).keypoints.size() << " features" << std::endl;
+            }
+        }
+
+        // Part2: Pairwise matching between features in different images
+        std::vector<cv::detail::MatchesInfo> pairwiseMatches(inputImageCount);
+        {
+            auto matcher = cv::detail::BestOf2NearestMatcher(false /* tryCuda */, ratio);
+            matcher(features, pairwiseMatches);
+            matcher.collectGarbage();
+        }
         for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
         {
-            computeImageFeatures(finder, inputImages.at(imgIdx), features.at(imgIdx));
             std::cout << "Image" << imgIdx << ": found "
-                      << features.at(imgIdx).keypoints.size() << " features" << std::endl;
+                      << pairwiseMatches.at(imgIdx).matches.size() << " matches" << std::endl;
         }
-    }
 
-    // Part2: Pairwise matching between features in different images
-    std::vector<cv::detail::MatchesInfo> pairwiseMatches(inputImageCount);
-    {
-        auto matcher = cv::detail::BestOf2NearestMatcher(false /* tryCuda */, ratio);
-        matcher(features, pairwiseMatches);
-        matcher.collectGarbage();
-    }
-    for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
-    {
-        std::cout << "Image" << imgIdx << ": found "
-                  << pairwiseMatches.at(imgIdx).matches.size() << " matches" << std::endl;
-    }
-
-    // Part3: Homography estimation
-    // Find camera K and R matrices
-    std::vector<cv::detail::CameraParams> cameraParams(inputImageCount);
-    {
-        auto estimator = cv::detail::HomographyBasedEstimator();
-        const bool isSuccess = estimator(features, pairwiseMatches, cameraParams);
-
-        if(!isSuccess)
+        // Part3: Homography estimation
+        // Find camera K and R matrices
+        std::vector<cv::detail::CameraParams> cameraParams(inputImageCount);
         {
-            std::cout << "Homography estimation failed" << std::endl;
-        }
-    }
-    for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
-    {
-        std::cout << "Image" << imgIdx << ": K="
-                  << cameraParams.at(imgIdx).K() << std::endl;
-        std::cout << "Image" << imgIdx << ": R="
-                  << cameraParams.at(imgIdx).R << std::endl;
-    }
+            auto estimator = cv::detail::HomographyBasedEstimator();
+            const bool isSuccess = estimator(features, pairwiseMatches, cameraParams);
 
-    // Convert R matrices from integer into float
-    {
+            if(!isSuccess)
+            {
+                std::cout << "Homography estimation failed" << std::endl;
+            }
+        }
         for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
         {
-            cv::Mat_<float> Rf;
-            cameraParams.at(imgIdx).R.convertTo(Rf, CV_32F);
-            cameraParams.at(imgIdx).R = Rf;
+            std::cout << "Image" << imgIdx << ": K="
+                      << cameraParams.at(imgIdx).K() << std::endl;
+            std::cout << "Image" << imgIdx << ": R="
+                      << cameraParams.at(imgIdx).R << std::endl;
+        }
+
+        // Convert R matrices from integer into float
+        // Needed for bundle adjustement
+        {
+            for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
+            {
+                cv::Mat_<float> Rf;
+                cameraParams.at(imgIdx).R.convertTo(Rf, CV_32F);
+                cameraParams.at(imgIdx).R = Rf;
+            }
+        }
+
+        // Bundle adjustement
+        {
+            auto adjuster = cv::detail::BundleAdjusterRay();
+            adjuster.setConfThresh(1.0f);
+            adjuster(features, pairwiseMatches, cameraParams);
+        }
+
+        // Save JSON
+        {
+
+            tao::json::value json = tao::json::from_file(matrixJsonPath);
+
+            auto cvMat3ToJson =
+            [](const cv::Mat &matrix, tao::json::basic_value<tao::json::traits>::array_t &array)
+            {
+                // clear previous matrix data
+                array.clear();
+
+                for(uint32_t rowIdx=0; rowIdx<3; rowIdx++)
+                {
+                    for(uint32_t colIdx=0; colIdx<3; colIdx++)
+                    {
+                        array.push_back(matrix.at<float>(rowIdx, colIdx));
+                    }
+                }
+            };
+
+            for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
+            {
+                // convert K into float
+                cv::Mat_<float> K;
+                cameraParams.at(imgIdx).K().convertTo(K, CV_32F);
+
+                cvMat3ToJson(K, json.at(imgIdx).at("K").get_array());
+                cvMat3ToJson(cameraParams.at(imgIdx).R, json.at(imgIdx).at("R").get_array());
+            }
+
+            const std::string jsonStr = tao::json::to_string(json, 4);
+
+            std::ofstream jsonFile;
+            jsonFile.open(matrixJsonPath);
+            jsonFile << jsonStr << std::endl;
+            jsonFile.close();
         }
     }
 
-    // Bundle adjustement
+    // Load JSON
+    std::vector<cv::Mat> cameraKs;
+    std::vector<cv::Mat> cameraRs;
     {
-        auto adjuster = cv::detail::BundleAdjusterRay();
-        adjuster.setConfThresh(1.0f);
-        adjuster(features, pairwiseMatches, cameraParams);
+        const tao::json::value json = tao::json::from_file(matrixJsonPath);
+
+        auto jsonToCvMat3 =
+        [](const std::vector<float> &array, cv::Mat &mat)
+        {
+            for(uint32_t rowIdx=0; rowIdx<3; rowIdx++)
+            {
+                for(uint32_t colIdx=0; colIdx<3; colIdx++)
+                {
+                    // Note: column first
+                    mat.at<float>(rowIdx, colIdx) = array.at(rowIdx*3 + colIdx);
+                }
+            }
+        };
+
+        for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
+        {
+            cameraKs.emplace_back(3, 3, CV_32F);
+            jsonToCvMat3(json.at(imgIdx).as<std::vector<float>>("K"), cameraKs.at(imgIdx));
+            cameraRs.emplace_back(3, 3, CV_32F);
+            jsonToCvMat3(json.at(imgIdx).as<std::vector<float>>("R"), cameraRs.at(imgIdx));
+        }
     }
 
     // Part4: Rotation matrix decomposition
@@ -205,7 +285,7 @@ int main(int argc, char** argv)
         {
             cv::Mat rotationVect;
             // See: "cv::Rodrigues" in https://docs.opencv.org/4.4.0/d9/d0c/group__calib3d.html
-            cv::Rodrigues(cameraParams.at(imgIdx).R, rotationVect);
+            cv::Rodrigues(cameraRs.at(imgIdx), rotationVect);
 
             // transform to degree for printing
             const auto rotationVectDeg = rotationVect * (180.0/3.141592653589793238463);
@@ -253,28 +333,27 @@ int main(int argc, char** argv)
         // Part6: Find face angle
         float faceAngleRad;
         {
+            const auto focal = cameraKs.at(0).at<float>(0, 0);
             auto warperCreator = cv::PlaneWarper();
-            auto warper = warperCreator.create(cameraParams.at(0).focal);
+            auto warper = warperCreator.create(focal);
 
             // Image center point
             const auto imageSize = inputImages.at(faceImgIdx).size();
             cv::Point2f imageCenterPoint = cv::Point2f(imageSize.width/2.0f, imageSize.height/2.0f);
 
             // warp the face center point
-            // Make float K
-            cv::Mat_<float> Kf;
-            cameraParams.at(faceImgIdx).K().convertTo(Kf, CV_32F);
             const auto warpImageCenterPoint = warper->warpPoint(
-                        imageCenterPoint, Kf, cameraParams.at(faceImgIdx).R);
+                        imageCenterPoint, cameraKs.at(faceImgIdx), cameraRs.at(faceImgIdx));
             const auto warpFaceCenterPoint  = warper->warpPoint(
-                        faceCenterPoint, Kf, cameraParams.at(faceImgIdx).R);
+                        faceCenterPoint, cameraKs.at(faceImgIdx), cameraRs.at(faceImgIdx));
 
             // face angle
-            const auto xRatio = warpImageCenterPoint.x / warpFaceCenterPoint.x;
+            const auto xRatio = warpFaceCenterPoint.x / warpImageCenterPoint.x;
             faceAngleRad = yAngles.at(faceImgIdx) * xRatio;
 
             const auto faceAngleDeg = faceAngleRad * (180.0/3.141592653589793238463);
-            std::cout << "Face ratio: " << xRatio << " angle: " << faceAngleDeg << std::endl;
+            std::cout << "Face ratio: " << warpImageCenterPoint.x << "/" << warpFaceCenterPoint.x
+                      << " = " << xRatio << " angle: " << faceAngleDeg << std::endl;
         }
         additionalRotationAngleRad = -faceAngleRad;
     }
@@ -295,8 +374,8 @@ int main(int argc, char** argv)
         // apply rotation matrix to each camera
         for(uint32_t imgIdx=0; imgIdx<inputImageCount; imgIdx++)
         {
-            auto R_rot = R_y * cameraParams.at(imgIdx).R;
-            cameraParams.at(imgIdx).R = R_rot;
+            auto R_rot = R_y * cameraRs.at(imgIdx);
+            cameraRs.at(imgIdx) = R_rot;
         }
     }
 
@@ -305,10 +384,11 @@ int main(int argc, char** argv)
     std::vector<cv::Rect> warpedImageRects;
     cv::Rect warpedCropRect;
     {
+        const auto focal = cameraKs.at(0).at<float>(0, 0);
         auto warperCreator = cv::PlaneWarper();
         // Note: this warper has a GPU version
 
-        auto warper = warperCreator.create(cameraParams.at(0).focal);
+        auto warper = warperCreator.create(focal);
         // TODO: this assume a similar focal for all pictures
         // OpenCV sample code calcultates a median focal here.
 
@@ -316,20 +396,16 @@ int main(int argc, char** argv)
         {
             if(std::abs(yAngles.at(imgIdx)+additionalRotationAngleRad) < maxWarpAngleRad)
             {
-                // Make float K
-                cv::Mat_<float> Kf;
-                cameraParams.at(imgIdx).K().convertTo(Kf, CV_32F);
-
                 // warp image
                 auto &warpedImage = warpedImages.emplace_back();
-                warper->warp(inputImages.at(imgIdx), Kf, cameraParams.at(imgIdx).R,
+                warper->warp(inputImages.at(imgIdx), cameraKs.at(imgIdx), cameraRs.at(imgIdx),
                              cv::INTER_LINEAR, cv::BORDER_CONSTANT,
                              warpedImage);
 
                 // warp corners
                 auto &warpedImageRect = warpedImageRects.emplace_back();
                 warpedImageRect = warper->warpRoi(
-                    inputImages.at(imgIdx).size(), Kf, cameraParams.at(imgIdx).R
+                    inputImages.at(imgIdx).size(), cameraKs.at(imgIdx), cameraRs.at(imgIdx)
                 );
 
                 std::cout << "Image" << imgIdx << ": ROI " << warpedImageRect << std::endl;
@@ -339,11 +415,9 @@ int main(int argc, char** argv)
 
         {
             // Warp cropped image corners with no rotation
-            cv::Size cropSize{cropWidth, cropHeight};
+            cv::Size cropSize{cropWidth, cropHeight};           
 
-            cv::Mat_<float> K;
-            cameraParams.at(0).K().convertTo(K, CV_32F);
-
+            auto &K = cameraKs.at(0);
             cv::Mat R = cv::Mat::eye(3, 3, CV_32F);
             // No rotation
 
@@ -404,8 +478,8 @@ int main(int argc, char** argv)
         }
         // Note: depending on the additional rotation angle, the panoramic result may be very large.
         // Solution:
-        // - if only the cropped result is needed, it is not required to warp all inputs, espcially
-        //   the ones with angles resulting in very strong perspective.
+        // - if only the cropped result is needed, it is not required to warp all inputs, especially
+        //   the ones with angles resulting in very strong perspective
 
         // Crop
         {
