@@ -14,6 +14,10 @@ include_directories("${OPENCV_STATIC_LIB_PATH}/include/opencv4/")
 file(GLOB OCV_STATIC_LIBS ${OPENCV_STATIC_LIB_PATH}/lib/*.a)
 file(GLOB OCV_3RD_PARTY_STATIC_LIBS ${OPENCV_STATIC_LIB_PATH}/lib/opencv4/3rdparty/*.a)
 
+set(DLIB_INSTALL "/home/pi/dlib/local")
+include_directories("${DLIB_INSTALL}/include/")
+file(GLOB DLIB_STATIC_LIB_PATH "${DLIB_INSTALL}/lib/libdlib.a")
+
 find_library(TURBO_JPEG_STATIC_LIB libturbojpeg.a)
 find_library(PNG_STATIC_LIB libpng.a)
 
@@ -87,6 +91,9 @@ target_link_libraries(inastitch_cal_detailed
     ${OCV_STATIC_LIBS}
     ${OCV_3RD_PARTY_STATIC_LIBS}
     ${OCV_3RD_PARTY_STATIC_LIBS}
+
+    # Dlib
+    ${DLIB_STATIC_LIB_PATH}
 
     #-lturbojpeg
     ${TURBO_JPEG_STATIC_LIB}
